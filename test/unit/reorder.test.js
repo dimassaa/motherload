@@ -99,6 +99,20 @@ test('low data never suggests a negative quantity', () => {
   assert.equal(r.suggested, 0);
 });
 
+test('rejects a demand window shorter than 90 days', () => {
+  assert.throws(
+    () =>
+      calculateReorder({
+        dailyQuantities: Array(30).fill(2),
+        leadTimeDays: 5,
+        minStock: 12,
+        balance: 30,
+        unitCost: '10.0000',
+      }),
+    ValidationError,
+  );
+});
+
 test('rejects incomplete input instead of producing NaN', () => {
   assert.throws(() => calculateReorder({}), ValidationError);
   assert.throws(

@@ -1,4 +1,5 @@
 import {
+  DEMAND_WINDOW_DAYS,
   HOLDING_RATE,
   MIN_HISTORY_DAYS,
   ORDER_COST_BYN,
@@ -14,11 +15,12 @@ const AVG_DECIMALS = 4;
 const QUANTITY_DECIMALS = 2;
 
 const QUANTITIES_MESSAGE = 'Дневной расход должен быть массивом неотрицательных чисел.';
+const WINDOW_MESSAGE = `Дневной расход должен содержать ровно ${DEMAND_WINDOW_DAYS} дней.`;
 const NUMBER_MESSAGE = 'Параметр должен быть неотрицательным числом.';
 
 function assertQuantities(dailyQuantities) {
-  if (!Array.isArray(dailyQuantities) || dailyQuantities.length === 0) {
-    throw new ValidationError(QUANTITIES_MESSAGE);
+  if (!Array.isArray(dailyQuantities) || dailyQuantities.length !== DEMAND_WINDOW_DAYS) {
+    throw new ValidationError(WINDOW_MESSAGE);
   }
   for (const quantity of dailyQuantities) {
     if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity < 0) {
@@ -41,11 +43,12 @@ function roundTo(decimal, places) {
  * Reorder point, safety stock and economic order quantity for one
  * component/warehouse pair.
  *
- * The caller owns the window: `dailyQuantities` must be the full rolling window
- * with quiet days included as zeros, otherwise the average would be diluted.
- * The divisor is the array length, not `historyDays`, because `historyDays` is
- * the number of days since the first movement and only decides whether the
- * statistics are trustworthy (`lowData`).
+ * The caller owns the window contents but not its length: `dailyQuantities`
+ * must be exactly `DEMAND_WINDOW_DAYS` (90) entries with quiet days included as
+ * zeros, because spec §6.6 fixes the divisor at 90. A shorter array would
+ * inflate the average and silently raise the reorder point, so it is rejected.
+ * `historyDays` is separate: it counts days since the first movement and only
+ * decides whether the statistics are trustworthy (`lowData`).
  *
  * With little history the demand statistics cannot be trusted, so the reorder
  * point falls back to the configured minimum stock and the suggestion tops the
@@ -86,13 +89,12 @@ export function calculateReorder({
   assertNonNegativeNumber(balance);
 
   const unitCostDecimal = d(unitCost);
-  const windowDays = dailyQuantities.length;
 
   const total = dailyQuantities.reduce((sum, quantity) => sum + quantity, 0);
-  const avgDaily = d(total).div(windowDays);
+  const avgDaily = d(total).div(DEMAND_WINDOW_DAYS);
   const variance = dailyQuantities
     .reduce((sum, quantity) => sum.plus(d(quantity).minus(avgDaily).pow(2)), d(0))
-    .div(windowDays);
+    .div(DEMAND_WINDOW_DAYS);
   const stddev = variance.sqrt();
 
   const leadTime = d(leadTimeDays);
