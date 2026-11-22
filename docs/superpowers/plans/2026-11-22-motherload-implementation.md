@@ -70,7 +70,7 @@ export async function closePool();
 ### Errors (`src/domain/errors.js`)
 
 ```js
-export class AppError extends Error { statusCode; code; }
+export class AppError extends Error { status; code; }
 export class ValidationError extends AppError {}      // 400
 export class UnauthorizedError extends AppError {}    // 401
 export class ForbiddenError extends AppError {}       // 403
@@ -781,7 +781,7 @@ test('receipt creates document, batch and positive movement', async () => {
 });
 test('receipt is rejected when warehouse has an active inventory count', async () => {
   await query("insert into inventory_counts (warehouse_id,status,started_by) values ($1,'draft',$2)", [wh, user]);
-  await assert.rejects(() => postReceipt(...), (e) => e.statusCode === 409);
+  await assert.rejects(() => postReceipt(...), (e) => e.status === 409);
 });
 test('receipt number increments without duplicates', async () => { /* two receipts -> 0001, 0002 */ });
 ```
@@ -971,12 +971,12 @@ git commit -m "feat: add stock operation screens"
 test('count snapshots expected quantities and freezes the warehouse', async () => {
   await receive(5);
   const { countId } = await createCount({ warehouseId, ... });
-  await assert.rejects(() => postReceipt(...), (e) => e.statusCode === 409);
+  await assert.rejects(() => postReceipt(...), (e) => e.status === 409);
   const lines = await query('select * from inventory_lines where count_id=$1', [countId]);
   assert.equal(lines.rows[0].expected_qty, 5);
 });
 test('submit rejects unfilled lines', async () => {
-  await assert.rejects(() => submitCount({ countId, ... }), (e) => e.statusCode === 400);
+  await assert.rejects(() => submitCount({ countId, ... }), (e) => e.status === 400);
 });
 test('approval applies positive and negative differences', async () => {
   await saveCountLines({ countId, lines: [{ componentId, actualQty: 8 }] });
@@ -988,7 +988,7 @@ test('approval applies positive and negative differences', async () => {
 test('approval aborts if balance changed since snapshot', async () => {
   await saveCountLines(... actual 8); await submitCount(...);
   await query('update stock_movements set qty_delta = qty_delta + 1 where ...'); // simulate drift
-  await assert.rejects(() => approveCount(...), (e) => e.statusCode === 409);
+  await assert.rejects(() => approveCount(...), (e) => e.status === 409);
 });
 test('approved count cannot be approved again', async () => { /* expect 409 */ });
 ```
