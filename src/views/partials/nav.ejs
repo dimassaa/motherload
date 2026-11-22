@@ -1,0 +1,37 @@
+<%
+  // Links are filtered by role on the server. Hiding a link is a convenience,
+  // not security: every route still enforces RBAC in Task 5.
+  const allLinks = [
+    { href: '/dashboard', label: 'Обзор', roles: ['admin', 'storekeeper', 'analyst'] },
+    { href: '/components', label: 'Комплектующие', roles: ['admin', 'storekeeper', 'analyst'] },
+    { href: '/stock', label: 'Остатки', roles: ['admin', 'storekeeper', 'analyst'] },
+    { href: '/inventory', label: 'Инвентаризация', roles: ['admin', 'storekeeper'] },
+    { href: '/analytics', label: 'Аналитика', roles: ['admin', 'storekeeper', 'analyst'] },
+    { href: '/alerts', label: 'Тревоги', roles: ['admin', 'storekeeper', 'analyst'] },
+    { href: '/reports', label: 'Отчёты', roles: ['admin', 'analyst'] },
+    { href: '/admin', label: 'Администрирование', roles: ['admin'] },
+  ];
+
+  const role = currentUser?.role;
+  const links = allLinks.filter((link) => link.roles.includes(role));
+  const isActive = (href) => currentPath === href || currentPath.startsWith(`${href}/`);
+%>
+<nav class="app-nav" aria-label="Основная навигация">
+  <ul class="app-nav__list">
+    <% for (const link of links) { %>
+      <li class="app-nav__item">
+        <a
+          class="app-nav__link<%= link.href === '/alerts' && alertCount > 0 ? ' app-nav__link--alert' : '' %>"
+          href="<%= link.href %>"
+          <%- isActive(link.href) ? 'aria-current="page"' : '' %>
+          <%- link.href === '/alerts' && alertCount > 0 ? `aria-label="Тревоги, ${alertCount} открытых"` : '' %>
+        >
+          <%= link.label %>
+          <% if (link.href === '/alerts') { %>
+            <span class="app-nav__badge" aria-hidden="true"><%= alertCount %></span>
+          <% } %>
+        </a>
+      </li>
+    <% } %>
+  </ul>
+</nav>

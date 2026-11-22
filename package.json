@@ -24,7 +24,8 @@
     "restore": "node scripts/restore.js",
     "cert": "node scripts/gen-cert.js",
     "smoke": "bash scripts/smoke.sh",
-    "postinstall": "node scripts/copy-vendor.js"
+    "postinstall": "node scripts/copy-vendor.js",
+    "build:og": "node scripts/build-og.js"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5",
