@@ -498,7 +498,7 @@ CREATE TYPE alert_severity AS ENUM ('critical', 'warning', 'info');
 `id identity PK`, `count_id FK ON DELETE CASCADE`, `component_id FK`, `expected_qty integer NOT NULL CHECK (expected_qty >= 0)`, `actual_qty integer CHECK (actual_qty >= 0)`, `difference integer`, `unit_cost numeric(14,4) NOT NULL DEFAULT 0`, `comment text`, `UNIQUE (count_id, component_id)`.
 
 **alerts**
-`id identity PK`, `type alert_type`, `severity alert_severity`, `component_id FK`, `warehouse_id FK`, `message text NOT NULL`, `status alert_status NOT NULL DEFAULT 'open'`, `created_at`, `acknowledged_by FK users NULL`, `acknowledged_at`, `resolved_at`.
+`id identity PK`, `type alert_type NOT NULL`, `severity alert_severity NOT NULL`, `component_id FK`, `warehouse_id FK`, `message text NOT NULL`, `status alert_status NOT NULL DEFAULT 'open'`, `created_at`, `acknowledged_by FK users NULL`, `acknowledged_at`, `resolved_at`. `type`/`severity` намеренно `NOT NULL`: NULL-ы ломают частичный уникальный индекс открытых алертов.
 Частичный уникальный индекс на `(type, component_id, warehouse_id) WHERE status <> 'resolved'`.
 
 **audit_log**
