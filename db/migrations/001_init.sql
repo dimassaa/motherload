@@ -4,8 +4,8 @@
 -- stock_batches is the FIFO/cost source. The views at the end of the file are
 -- the read models every repository queries.
 --
--- schema_migrations is intentionally absent here: src/db/migrate.js creates and
--- owns it before running any migration file (it uses a `name` column today).
+-- schema_migrations is created and owned by src/db/migrate.js before any
+-- migration file runs; it carries the spec §7.2 shape (version, applied_at).
 
 CREATE EXTENSION IF NOT EXISTS citext;
 
@@ -191,13 +191,15 @@ CREATE TABLE inventory_lines (
   comment text,
   UNIQUE (count_id, component_id),
   -- An empty actual_qty means "not entered" and must stay NULL, never 0.
-  -- A recorded difference is always derived, but may be left NULL while the
-  -- count is still being filled in.
+  -- difference is not stored independently: it is always derived on the row.
+  -- The `difference IS NOT NULL` guard is required because a CHECK passes on
+  -- NULL: without it `actual_qty = 7, difference IS NULL` would slip through.
   CONSTRAINT inventory_lines_difference_matches CHECK (
     (actual_qty IS NULL AND difference IS NULL)
       OR (
         actual_qty IS NOT NULL
-        AND (difference IS NULL OR difference = actual_qty - expected_qty)
+        AND difference IS NOT NULL
+        AND difference = actual_qty - expected_qty
       )
   )
 );

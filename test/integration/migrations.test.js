@@ -5,6 +5,7 @@ import { pool, query } from '../../src/db/pool.js';
 import { setupTestDb, teardownTestDb, truncateAll } from '../helpers/db.js';
 
 const CORE_TABLES = [
+  'schema_migrations',
   'users',
   'warehouses',
   'categories',
@@ -119,6 +120,21 @@ test('migrations are idempotent and create core tables, views and enums', async 
   for (const name of CORE_ENUMS) {
     assert.ok(enumNames.has(name), `missing enum ${name}`);
   }
+
+  const migrationColumns = await query(
+    `select column_name, data_type, is_nullable
+     from information_schema.columns
+     where table_schema = 'public' and table_name = 'schema_migrations'
+     order by ordinal_position`,
+  );
+  assert.deepEqual(
+    migrationColumns.rows.map((row) => row.column_name),
+    ['version', 'applied_at'],
+    'schema_migrations must follow spec 7.2',
+  );
+  assert.equal(migrationColumns.rows[0].data_type, 'text');
+  assert.equal(migrationColumns.rows[1].data_type, 'timestamp with time zone');
+  assert.equal(migrationColumns.rows[1].is_nullable, 'NO');
 });
 
 test('money and quantity columns use the documented PostgreSQL types', async () => {
@@ -334,10 +350,21 @@ test('inventory lines keep the difference in sync with actual and expected', asy
   );
 
   const pendingId = await insertComponent('SKU-LINE-PENDING');
+  await assert.rejects(
+    () =>
+      query(
+        `insert into inventory_lines (count_id, component_id, expected_qty, actual_qty)
+         values ($1, $2, 5, 7)`,
+        [countId, pendingId],
+      ),
+    sqlState(CHECK_VIOLATION),
+  );
+
+  const consistentId = await insertComponent('SKU-LINE-CONSISTENT');
   await query(
-    `insert into inventory_lines (count_id, component_id, expected_qty, actual_qty)
-     values ($1, $2, 4, 5)`,
-    [countId, pendingId],
+    `insert into inventory_lines (count_id, component_id, expected_qty, actual_qty, difference)
+     values ($1, $2, 5, 7, 2)`,
+    [countId, consistentId],
   );
 
   await assert.rejects(
