@@ -387,7 +387,7 @@ eoq = sqrt(2 * annual_demand * 50 / (unit_cost * 0.20))
 suggested = balance <= rop ? ceil(eoq) : 0
 ```
 
-Если `lead_time_days` не задан у позиции, берётся срок поставщика по умолчанию. Если истории меньше 14 дней, блок помечается «мало данных», ROP = `min_stock`, suggested = `max(0, min_stock - balance)`.
+Если `lead_time_days` не задан у позиции, берётся срок поставщика по умолчанию. Если фактической истории меньше 14 дней (считается от первого движения, а не от длины массива с нулями), блок помечается «мало данных», ROP = `min_stock`, suggested = `max(0, min_stock - balance)`.
 
 **Разрез по складам.** `avg_daily`, `stddev`, `safety_stock`, `ROP`, `EOQ` и `suggested` считаются отдельно для каждой пары «позиция + склад» по расходу этого склада. В сводном режиме «все склады» остатки суммируются, `ROP` и `suggested` суммируются по складам, где позиция хранится или двигалась за 180 дней. `EOQ` не суммируется (это размер одного заказа) — показывается максимум по складам и раскрывается детализация.
 
@@ -516,6 +516,7 @@ CREATE TYPE alert_severity AS ENUM ('critical', 'warning', 'info');
 - `alerts (status, type)`, `alerts (component_id)`
 - `audit_log (created_at DESC)`, `audit_log (user_id)`
 - `inventory_counts (warehouse_id, status)`
+- уникальный частичный `inventory_counts (warehouse_id) WHERE status IN ('draft','submitted')` — на складе не может быть двух активных инвентаризаций
 
 ### 7.4. Целостность
 
@@ -576,10 +577,10 @@ test/
   unit/*
   integration/*
 scripts/
-  backup.sh
-  restore.sh
+  backup.js
+  restore.js
   smoke.sh
-  gen-cert.sh
+  gen-cert.js
 docs/
   superpowers/specs/*
   plans/*
@@ -764,7 +765,7 @@ CSP (пример): `default-src 'self'; script-src 'self'; style-src 'self'; im
 3. Создать роль и БД, прописать `DATABASE_URL`.
 4. `npm run db:migrate && npm run db:seed`.
 5. `npm run dev`.
-6. HTTPS: `npm run cert` (openssl), `HTTPS=1`, пути к сертификатам.
+6. HTTPS: `npm run cert` (`selfsigned`, работает и на Windows), `HTTPS=1`, пути к сертификатам.
 7. Бэкап: `npm run backup`; восстановление: `npm run restore -- backups/<file>.dump`.
 8. Планировщик Windows: ежедневный `pg_dump` через Task Scheduler (пример команды).
 

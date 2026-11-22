@@ -229,7 +229,7 @@ await withTransaction(async (client) => { ... });
 - EJS экранирует `<?= ?>`. `<?- ?>` использовать только для доверенного HTML (иконки, пагинация), никогда для пользовательских данных.
 - Аудит каждой мутации: `action`, `entity_type`, `entity_id`, `details` без секретов.
 - HTTPS: `HTTPS=1` + `TLS_CERT_PATH`/`TLS_KEY_PATH`; HSTS при secure.
-- Бэкапы: `scripts/backup.sh` (pg_dump), `scripts/restore.sh`; ретенция 7 дней. Веб-доступа к дампам нет.
+- Бэкапы: `scripts/backup.js` (pg_dump), `scripts/restore.js`; ретенция 7 дней. Веб-доступа к дампам нет.
 - Не логировать пароли, хеши, CSRF-токены, содержимое cookie.
 
 ---
