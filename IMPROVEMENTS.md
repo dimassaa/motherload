@@ -2,6 +2,20 @@
 
 Пока пусто. Некритичные находки добавляются сюда по мере работы.
 
+## 2026-11-22, Task 4 — auth session and rate-limit notes
+
+- `POST /logout` destroys the server-side session but leaves the browser cookie
+  in place until its 8-hour expiry. The value is unusable because the session
+  row is gone, so this is hygiene only; clearing the cookie needs the cookie
+  name shared between `app.js` and the controller, deferred until a session
+  config module exists.
+- Rate-limit counters live in process memory. The spec deploys one application
+  container, so this is correct today; a multi-instance deployment would need a
+  shared store.
+- CSRF protection is mounted by the web router so `/healthz` does not create a
+  session row on every probe. Any future API router must mount
+  `csrfProtection` itself; this is called out in the middleware comment.
+
 ## 2026-11-22, Task 1 — `sharp` high-severity advisory
 
 `npm audit` reports one high-severity advisory in the `sharp` devDependency

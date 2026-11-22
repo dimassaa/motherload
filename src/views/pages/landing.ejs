@@ -1,3 +1,7 @@
+<%
+  const emailValue = typeof email === 'string' ? email : '';
+  const authError = typeof loginError === 'string' && loginError !== '' ? loginError : null;
+%>
 <section class="landing" aria-labelledby="landing-title">
   <div class="landing__intro">
     <p class="axis-label">
@@ -23,12 +27,57 @@
   <aside class="landing__auth card" aria-labelledby="landing-auth-title">
     <p class="tag">Вход</p>
     <h2 id="landing-auth-title" class="card__title">Рабочее место</h2>
-    <p class="landing__auth-note">
-      Доступ открыт сотрудникам склада после входа в систему.
-    </p>
-    <button class="btn btn--primary" type="button" disabled>Войти</button>
-    <p class="landing__auth-hint">
-      Если вам нужен доступ, обратитесь к администратору системы.
-    </p>
+    <p class="landing__auth-note">Доступ открыт сотрудникам склада после входа в систему.</p>
+
+    <form class="form" method="post" action="/login" novalidate>
+      <%- csrfField() %>
+
+      <% if (authError) { %>
+        <div class="form-errors" role="alert">
+          <p class="form-errors__title" id="login-error"><%= authError %></p>
+        </div>
+      <% } %>
+
+      <div class="form-field">
+        <label class="form-field__label" for="login-email">Email</label>
+        <input
+          class="form-field__input"
+          id="login-email"
+          name="email"
+          type="email"
+          autocomplete="username"
+          inputmode="email"
+          required
+          value="<%= emailValue %>"
+          <%- authError ? 'aria-invalid="true" aria-describedby="login-error"' : '' %>
+        >
+      </div>
+
+      <div class="form-field">
+        <label class="form-field__label" for="login-password">Пароль</label>
+        <input
+          class="form-field__input"
+          id="login-password"
+          name="password"
+          type="password"
+          autocomplete="current-password"
+          required
+          <%- authError ? 'aria-invalid="true" aria-describedby="login-error"' : '' %>
+        >
+      </div>
+
+      <button class="btn btn--primary" type="submit">Войти</button>
+    </form>
+
+    <details class="landing__auth-hint">
+      <summary class="tag tag--plain">Демо-доступы</summary>
+      <ul class="landing__facts">
+        <li><code>admin@motherload.by</code> / <code>Admin!23456</code> — администратор</li>
+        <li><code>sklad@motherload.by</code> / <code>Sklad!23456</code> — кладовщик</li>
+        <li><code>analyst@motherload.by</code> / <code>Analyst!2345</code> — аналитик</li>
+      </ul>
+    </details>
+
+    <p class="landing__auth-hint">Если вам нужен доступ, обратитесь к администратору системы.</p>
   </aside>
 </section>
