@@ -1165,7 +1165,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Implement analytics repository**
 
-ABC: SQL sum `qty_remaining * unit_cost` by component with filters; classify in JS. XYZ: SQL issues grouped by month between reference date minus 6 months and reference date; build 6-length arrays with zeros; classify in JS; matrix crosses ABC and XYZ from the same filters. Ensure numbers from `pg` are strings passed to Decimal or parsed as integers for quantities.
+ABC: SQL sum `qty_remaining * unit_cost` by component with filters; classify in JS. XYZ: SQL issues grouped by month between reference date minus 6 months and reference date; build 6-length arrays with zeros; classify in JS; matrix crosses ABC and XYZ from the same filters. `pg` returns `SUM(qty)` numeric as strings: cast quantities to `Number` before calling `classifyXyz`/`calculateReorder`, and keep money strings for Decimal. `calculateReorder` requires exactly 90 zero-filled entries; `classifyXyz` requires exactly 6.
 
 - [ ] **Step 4: Build ABC/XYZ pages**
 
@@ -1447,7 +1447,7 @@ git commit -m "chore: add reproducible demo data and container startup"
 
 - [ ] **Step 1: Write README and DEPLOYMENT**
 
-README: what Motherload is, screenshots (if available), stack, quick start Docker, local setup, demo accounts, commands, architecture, security notes, project structure, license note. DEPLOYMENT: Windows 10+ manual steps (Node 24, PostgreSQL 18, role/db creation, `.env`, migrations, seed, start), HTTPS with `npm run cert`, backup/restore and Task Scheduler example, Docker production notes. `scripts/gen-cert.js` uses the `selfsigned` package to write `certs/key.pem` and `certs/cert.pem` for `localhost` (works on Windows without OpenSSL). `IMPROVEMENTS.md` with known non-critical items (if any).
+README: what Motherload is, screenshots (if available), stack, quick start Docker, local setup, demo accounts, commands, architecture, security notes, project structure, license note. Add a troubleshooting note: a pre-`version` `schema_migrations` table from an early build must be dropped or the database recreated before `db:migrate` (`42703`), because migration history is intentionally not auto-renamed. DEPLOYMENT: Windows 10+ manual steps (Node 24, PostgreSQL 18, role/db creation, `.env`, migrations, seed, start), HTTPS with `npm run cert`, backup/restore and Task Scheduler example, Docker production notes. `scripts/gen-cert.js` uses the `selfsigned` package to write `certs/key.pem` and `certs/cert.pem` for `localhost` (works on Windows without OpenSSL). `IMPROVEMENTS.md` with known non-critical items (if any).
 
 - [ ] **Step 2: Add CI**
 
