@@ -8,7 +8,7 @@ const MIGRATIONS_DIR = fileURLToPath(new URL('../../db/migrations/', import.meta
 
 const CREATE_MIGRATIONS_TABLE = `
   CREATE TABLE IF NOT EXISTS schema_migrations (
-    name text PRIMARY KEY,
+    version text PRIMARY KEY,
     applied_at timestamptz NOT NULL DEFAULT now()
   )
 `;
@@ -44,8 +44,8 @@ export async function migrate(poolOverride = defaultPool) {
   const client = await poolOverride.connect();
   try {
     await client.query(CREATE_MIGRATIONS_TABLE);
-    const { rows } = await client.query('SELECT name FROM schema_migrations');
-    const appliedNames = new Set(rows.map((row) => row.name));
+    const { rows } = await client.query('SELECT version FROM schema_migrations');
+    const appliedNames = new Set(rows.map((row) => row.version));
     const files = await listMigrationFiles();
     let applied = 0;
 
@@ -55,7 +55,7 @@ export async function migrate(poolOverride = defaultPool) {
       await client.query('BEGIN');
       try {
         await client.query(sql);
-        await client.query('INSERT INTO schema_migrations (name) VALUES ($1)', [file]);
+        await client.query('INSERT INTO schema_migrations (version) VALUES ($1)', [file]);
         await client.query('COMMIT');
       } catch (error) {
         await rollback(client, error);
