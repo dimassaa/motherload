@@ -37,6 +37,12 @@ const dateTimeFormatter = new Intl.DateTimeFormat('ru-BY', {
   hourCycle: 'h23',
 });
 
+const ROLE_LABELS = Object.freeze({
+  admin: 'Администратор',
+  storekeeper: 'Кладовщик',
+  analyst: 'Аналитик',
+});
+
 const STATUS_CHIPS = Object.freeze({
   draft: { label: 'Черновик', className: 'chip--muted' },
   submitted: { label: 'На проверке', className: 'chip--warning' },
@@ -154,6 +160,15 @@ export function formatPct(value, fractionDigits = 1) {
  */
 export function money(value) {
   return `<span class="money">${formatMoney(value)} <i class="nbrb-icon" aria-hidden="true">BYN</i></span>`;
+}
+
+/**
+ * Map a stored role to its Russian label. Unknown roles keep their raw value
+ * instead of pretending to be a known role.
+ */
+export function roleLabel(role) {
+  const key = String(role ?? '');
+  return ROLE_LABELS[key] ?? key;
 }
 
 /**

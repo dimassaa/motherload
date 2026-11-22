@@ -10,6 +10,13 @@ export const PASSWORD_POLICY_MESSAGE =
 
 const INVALID_CREDENTIALS_MESSAGE = 'Неверный email или пароль';
 
+// A real Argon2id hash of a throwaway string, used only when the email does not
+// exist. Verifying against it costs the same as a real account, so response
+// timing cannot be used to enumerate emails. It belongs to no user and is never
+// accepted as a credential.
+const DUMMY_PASSWORD_HASH =
+  '$argon2id$v=19$m=65536,t=3,p=4$PMACdyaTWJzEVGRxCVmhTQ$9UdQRy8j2AqoWENp/0LQtlmnOUNVH6mifXTmrtjWDkA';
+
 /**
  * Enforce the storage policy for every new or changed password.
  * The check deliberately does not run when verifying a login attempt: an
@@ -121,9 +128,10 @@ export async function login({ email, password, req }) {
   const normalizedEmail = typeof email === 'string' ? email.trim() : '';
   const user = normalizedEmail === '' ? null : await users.findByEmail(normalizedEmail);
 
-  // Hash verification runs even for inactive accounts: skipping it would make
-  // the response time reveal whether the account exists and is disabled.
-  const passwordMatches = user ? await verifyPassword(user.passwordHash, password) : false;
+  // Hash verification always runs, including for unknown and inactive
+  // accounts: skipping it would make the response time reveal which emails
+  // exist. The dummy hash keeps the unknown-email path at one full verify.
+  const passwordMatches = await verifyPassword(user?.passwordHash ?? DUMMY_PASSWORD_HASH, password);
 
   if (!user || !user.isActive || !passwordMatches) {
     await audit.record({

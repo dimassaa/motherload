@@ -4,11 +4,6 @@
 
 ## 2026-11-22, Task 4 — auth session and rate-limit notes
 
-- `POST /logout` destroys the server-side session but leaves the browser cookie
-  in place until its 8-hour expiry. The value is unusable because the session
-  row is gone, so this is hygiene only; clearing the cookie needs the cookie
-  name shared between `app.js` and the controller, deferred until a session
-  config module exists.
 - Rate-limit counters live in process memory. The spec deploys one application
   container, so this is correct today; a multi-instance deployment would need a
   shared store.

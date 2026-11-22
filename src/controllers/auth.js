@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SESSION_COOKIE_NAME, sessionCookieOptions } from '../config/session.js';
 import { UnauthorizedError } from '../domain/errors.js';
 import { login as loginService } from '../services/auth.js';
 import * as audit from '../services/audit.js';
@@ -97,6 +98,9 @@ export async function logout(req, res, next) {
   try {
     if (req.user) await audit.record({ action: 'auth.logout', req });
     await destroySession(req);
+    // Destroying the session row already invalidates the id; clearing the cookie
+    // as well stops the browser from sending a dead value for the next 8 hours.
+    res.clearCookie(SESSION_COOKIE_NAME, sessionCookieOptions());
     res.redirect('/');
   } catch (error) {
     next(error);

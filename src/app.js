@@ -6,6 +6,11 @@ import session from 'express-session';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import { env } from './config/env.js';
+import {
+  SESSION_COOKIE_MAX_AGE_MS,
+  SESSION_COOKIE_NAME,
+  sessionCookieOptions,
+} from './config/session.js';
 import { pool } from './db/pool.js';
 import { logger } from './lib/logger.js';
 import { attachUser } from './middleware/auth.js';
@@ -37,16 +42,15 @@ const staticOptions = { index: false };
 // of letting the store invent a different schema.
 const PgSessionStore = connectPgSimple(session);
 
-const SESSION_COOKIE_NAME = 'motherload.sid';
-
 /** Build the Express application. Tests call this directly; server.js wraps it in HTTP(S). */
 export function createApp() {
   const app = express();
 
   app.disable('x-powered-by');
-  // Rate limiting keys off the client IP, so behind one reverse proxy the
-  // forwarded address is the trustworthy one.
-  app.set('trust proxy', 1);
+  // Rate limiting keys off the client IP. Forwarding headers are trusted only
+  // when TRUST_PROXY explicitly says a proxy is in front: the shipped Docker
+  // setup publishes the app port directly, so the default `false` is required.
+  app.set('trust proxy', env.trustProxy);
   app.set('view engine', 'ejs');
   app.set('views', viewsDir);
   app.use(expressLayouts);
@@ -106,13 +110,7 @@ export function createApp() {
       // Rolling extends the 8-hour window for active users while the absolute
       // cookie lifetime still bounds a forgotten browser session.
       rolling: true,
-      cookie: {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: env.https,
-        path: '/',
-        maxAge: env.sessionTtlHours * 3600 * 1000,
-      },
+      cookie: { ...sessionCookieOptions(), maxAge: SESSION_COOKIE_MAX_AGE_MS },
     }),
   );
   app.use(attachUser);
