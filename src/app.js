@@ -1,10 +1,13 @@
 import { fileURLToPath } from 'node:url';
 import express from 'express';
+import expressLayouts from 'express-ejs-layouts';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import { env } from './config/env.js';
 import { logger } from './lib/logger.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
+import { attachFlash } from './middleware/flash.js';
+import { attachLocals } from './middleware/locals.js';
 import { webRouter } from './routes/web.js';
 
 const publicDir = fileURLToPath(new URL('../public', import.meta.url));
@@ -34,6 +37,12 @@ export function createApp() {
   app.set('trust proxy', 1);
   app.set('view engine', 'ejs');
   app.set('views', viewsDir);
+  app.use(expressLayouts);
+  app.set('layout', 'layouts/base');
+  // Pages own their <script> and <link> placement; automatic extraction would
+  // hide ordering and break the "no inline scripts" review checklist.
+  app.set('layout extractScripts', false);
+  app.set('layout extractStyles', false);
 
   app.use(
     helmet({
@@ -58,6 +67,13 @@ export function createApp() {
 
   app.use(express.static(publicDir, staticOptions));
   app.use('/vendor', express.static(`${publicDir}/vendor`, staticOptions));
+
+  // NOTE: this order is required — session → attachUser → attachFlash → attachLocals.
+  // Task 4 inserts the session and attachUser middleware above this block. Flash
+  // must see the session it reads from, and attachLocals must run last so it can
+  // publish the authenticated req.user. Until then both are inert.
+  app.use(attachFlash);
+  app.use(attachLocals);
 
   app.use(webRouter);
 

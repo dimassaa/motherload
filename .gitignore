@@ -10,7 +10,10 @@ tmp/
 public/uploads/
 .cache/
 certs/
-public/vendor/
+# Vendor output is generated, except the esbuild Chart.js ESM bundle: committing
+# it keeps production installs (and the Docker runtime) independent of devDeps.
+public/vendor/*
+!public/vendor/chart.esm.js
 # Fonts copied from node_modules by scripts/copy-vendor.js are reproducible.
 # The NBRB BYN sign font is a committed source asset, hence the re-include.
 public/fonts/*.woff2

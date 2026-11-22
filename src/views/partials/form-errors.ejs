@@ -1,0 +1,15 @@
+<%
+  const messages = (errors ?? [])
+    .map((error) => (typeof error === 'string' ? error : error?.message))
+    .filter(Boolean);
+%>
+<% if (messages.length > 0) { %>
+  <div class="form-errors" role="alert">
+    <p class="form-errors__title">Проверьте форму</p>
+    <ul class="form-errors__list">
+      <% for (const message of messages) { %>
+        <li><%= message %></li>
+      <% } %>
+    </ul>
+  </div>
+<% } %>

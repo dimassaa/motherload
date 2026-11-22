@@ -1,0 +1,7 @@
+<%
+  const chip = statusChip(status);
+%>
+<span class="chip <%= chip.className %>">
+  <span class="chip__dot" aria-hidden="true"></span>
+  <%= chip.label %>
+</span>

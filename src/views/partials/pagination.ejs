@@ -1,0 +1,24 @@
+<%
+  const currentPage = Number(page) || 1;
+  const lastPage = Number(totalPages) || 1;
+  const extraParams = typeof params !== 'undefined' && params ? params : {};
+  const base = typeof basePath !== 'undefined' && basePath ? basePath : currentPath;
+  const linkTo = (target) => queryString(base, { ...extraParams, page: target });
+%>
+<% if (lastPage > 1) { %>
+  <nav class="pagination" aria-label="Постраничная навигация">
+    <% if (currentPage > 1) { %>
+      <a class="pagination__link" href="<%= linkTo(currentPage - 1) %>" rel="prev">← Назад</a>
+    <% } else { %>
+      <span class="pagination__link pagination__link--disabled" aria-disabled="true">← Назад</span>
+    <% } %>
+
+    <span class="pagination__status">Страница <%= currentPage %> из <%= lastPage %></span>
+
+    <% if (currentPage < lastPage) { %>
+      <a class="pagination__link" href="<%= linkTo(currentPage + 1) %>" rel="next">Вперёд →</a>
+    <% } else { %>
+      <span class="pagination__link pagination__link--disabled" aria-disabled="true">Вперёд →</span>
+    <% } %>
+  </nav>
+<% } %>

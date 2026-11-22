@@ -1,0 +1,16 @@
+<%
+  // Colour is never the only signal: each variant carries its own glyph and text.
+  const flashVariants = {
+    success: { modifier: 'success', glyph: '✓' },
+    error: { modifier: 'danger', glyph: '!' },
+    warning: { modifier: 'warning', glyph: '!' },
+    info: { modifier: 'info', glyph: 'i' },
+  };
+  const flashView = flash ? (flashVariants[flash.type] ?? flashVariants.info) : null;
+%>
+<% if (flashView && flash.message) { %>
+  <div class="flash flash--<%= flashView.modifier %>"<%- flashView.modifier === 'danger' ? ' role="alert"' : ' role="status" aria-live="polite"' %>>
+    <span class="flash__glyph" aria-hidden="true"><%= flashView.glyph %></span>
+    <p class="flash__text"><%= flash.message %></p>
+  </div>
+<% } %>

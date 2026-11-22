@@ -1,0 +1,13 @@
+<%
+  const hasAction =
+    typeof actionHref !== 'undefined' && actionHref && typeof actionLabel !== 'undefined' && actionLabel;
+%>
+<div class="empty-state">
+  <p class="empty-state__title"><%= typeof title !== 'undefined' && title ? title : 'Пока пусто' %></p>
+  <% if (typeof text !== 'undefined' && text) { %>
+    <p class="empty-state__text"><%= text %></p>
+  <% } %>
+  <% if (hasAction) { %>
+    <a class="btn btn--outline btn--sm" href="<%= actionHref %>"><%= actionLabel %></a>
+  <% } %>
+</div>
