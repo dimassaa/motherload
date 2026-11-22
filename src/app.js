@@ -68,10 +68,12 @@ export function createApp() {
   app.use(express.static(publicDir, staticOptions));
   app.use('/vendor', express.static(`${publicDir}/vendor`, staticOptions));
 
-  // Helpers and the current user must exist before any page renders. Flash is
-  // inert until Task 4 adds sessions, because it reads req.session only.
-  app.use(attachLocals);
+  // NOTE: this order is required — session → attachUser → attachFlash → attachLocals.
+  // Task 4 inserts the session and attachUser middleware above this block. Flash
+  // must see the session it reads from, and attachLocals must run last so it can
+  // publish the authenticated req.user. Until then both are inert.
   app.use(attachFlash);
+  app.use(attachLocals);
 
   app.use(webRouter);
 

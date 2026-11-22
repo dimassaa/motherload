@@ -469,6 +469,113 @@ ol {
   text-align: center;
 }
 
+/* Mobile navigation. Hidden on desktop; the media query below swaps it in for
+   .app-nav. A native <details> keeps this working without client JavaScript. */
+.app-nav__burger {
+  display: none;
+}
+
+.app-nav__burger-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8) 0;
+  color: var(--color-forest-ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  list-style: none;
+}
+
+.app-nav__burger-summary::-webkit-details-marker {
+  display: none;
+}
+
+.app-nav__burger-icon,
+.app-nav__burger-icon::before,
+.app-nav__burger-icon::after {
+  display: block;
+  width: 16px;
+  height: 2px;
+  background: currentcolor;
+}
+
+.app-nav__burger-icon {
+  position: relative;
+}
+
+.app-nav__burger-icon::before,
+.app-nav__burger-icon::after {
+  content: '';
+  position: absolute;
+  left: 0;
+}
+
+.app-nav__burger-icon::before {
+  top: -5px;
+}
+
+.app-nav__burger-icon::after {
+  bottom: -5px;
+}
+
+.app-nav__burger[open] .app-nav__burger-icon {
+  background: transparent;
+}
+
+.app-nav__burger[open] .app-nav__burger-icon::before {
+  top: 0;
+  transform: rotate(45deg);
+}
+
+.app-nav__burger[open] .app-nav__burger-icon::after {
+  bottom: 0;
+  transform: rotate(-45deg);
+}
+
+.app-nav__burger-panel {
+  max-height: calc(100vh - 160px);
+  padding-bottom: var(--space-12);
+  overflow-y: auto;
+}
+
+.app-nav__burger-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+}
+
+.app-nav__burger-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  padding: 10px var(--space-8);
+  border-radius: var(--radius-tag);
+  color: var(--color-forest-ink);
+  font-size: var(--text-body);
+}
+
+.app-nav__burger-link:hover {
+  background: rgb(255 255 255 / 55%);
+  text-decoration: none;
+}
+
+.app-nav__burger-link[aria-current='page'] {
+  box-shadow: inset 2px 0 0 var(--color-deep-fern);
+  font-weight: 500;
+}
+
+.app-nav__burger-logout {
+  margin-top: var(--space-8);
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--color-lichen);
+}
+
 /* ------------------------------------------------------------------ Footer */
 
 .site-footer {
@@ -732,7 +839,20 @@ ol {
   color: var(--color-info);
 }
 
-/* Toasts are the async variant; markup is injected by public/js, not the SSR page. */
+/* Toasts are the async variant; public/js injects them into this fixed region,
+   outside the normal document flow. */
+.toast-region {
+  position: fixed;
+  top: var(--space-16);
+  right: var(--space-16);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  max-width: min(360px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
 .toast {
   display: flex;
   align-items: center;
@@ -742,7 +862,8 @@ ol {
   background: var(--color-forest-ink);
   color: var(--color-bone-white);
   font-size: 13px;
-  box-shadow: 0 5px 6px -4px rgb(9 53 45 / 5%);
+  box-shadow: var(--shadow-hairline);
+  pointer-events: auto;
 }
 
 /* ------------------------------------------------------------------- Tables */
@@ -1166,9 +1287,21 @@ ol {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
+  /* Desktop links are replaced by the no-JS burger menu. */
   .app-nav {
+    display: none;
+  }
+
+  .app-header__logout {
+    display: none;
+  }
+
+  .app-nav__burger {
+    display: block;
     grid-column: 1 / -1;
     order: 3;
+    margin-top: var(--space-4);
+    border-top: 1px solid var(--color-lichen);
   }
 
   .kpi-grid {
@@ -1197,10 +1330,6 @@ ol {
 
   .app-header__user {
     justify-self: start;
-  }
-
-  .app-nav {
-    order: 2;
   }
 
   .landing {

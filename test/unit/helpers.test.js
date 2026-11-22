@@ -41,8 +41,8 @@ test('formatDate keeps document date without timezone shift', () => {
   assert.equal(formatDate('2026-11-22'), '22.11.2026');
 });
 
-test('formatDate accepts Date instances and rejects invalid input', () => {
-  assert.equal(formatDate(new Date('2026-11-22T00:00:00+03:00')), '22.11.2026');
+test('formatDate rejects Date instances to avoid the pg day-shift trap', () => {
+  assert.throws(() => formatDate(new Date('2026-11-22T00:00:00+03:00')), TypeError);
   assert.throws(() => formatDate('22.11.2026'), TypeError);
   assert.throws(() => formatDate('2026-02-31'), TypeError);
 });

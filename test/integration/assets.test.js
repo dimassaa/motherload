@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readdir, stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import test from 'node:test';
@@ -30,15 +30,15 @@ test('the official NBRB font ships with the repository', async () => {
   }
 });
 
-test('public/fonts contains exactly the expected hosted font files', async () => {
-  const css = await readdir(path.join(publicDir, 'fonts'));
-  const referenced = css.filter((file) => /\.(woff2|woff|ttf)$/.test(file)).sort();
-  const expected = [
+test('the stylesheet references every hosted font file', async () => {
+  const css = await readFile(path.join(publicDir, 'css/app.css'), 'utf8');
+  const fonts = [
     ...GENERATED_ASSETS.filter((file) => file.startsWith('fonts/')),
     ...COMMITTED_FONTS,
-  ]
-    .map((file) => path.basename(file))
-    .sort();
+  ];
 
-  assert.deepEqual(referenced, expected);
+  for (const relativePath of fonts) {
+    const fileName = path.basename(relativePath);
+    assert.ok(css.includes(`/fonts/${fileName}`), `app.css does not reference ${fileName}`);
+  }
 });

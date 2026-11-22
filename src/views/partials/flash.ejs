@@ -9,7 +9,7 @@
   const flashView = flash ? (flashVariants[flash.type] ?? flashVariants.info) : null;
 %>
 <% if (flashView && flash.message) { %>
-  <div class="flash flash--<%= flashView.modifier %>" role="status" aria-live="polite">
+  <div class="flash flash--<%= flashView.modifier %>"<%- flashView.modifier === 'danger' ? ' role="alert"' : ' role="status" aria-live="polite"' %>>
     <span class="flash__glyph" aria-hidden="true"><%= flashView.glyph %></span>
     <p class="flash__text"><%= flash.message %></p>
   </div>

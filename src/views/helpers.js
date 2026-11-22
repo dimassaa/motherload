@@ -27,13 +27,6 @@ const qtyFormatter = new Intl.NumberFormat('ru-BY', {
   maximumFractionDigits: 3,
 });
 
-const dateFormatter = new Intl.DateTimeFormat('ru-BY', {
-  timeZone: DISPLAY_TIME_ZONE,
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
-
 const dateTimeFormatter = new Intl.DateTimeFormat('ru-BY', {
   timeZone: DISPLAY_TIME_ZONE,
   year: 'numeric',
@@ -107,31 +100,29 @@ export function formatQty(value) {
 
 /**
  * Format a calendar date as `дд.мм.гггг`.
- * A `YYYY-MM-DD` string is read as written, never through `Date`, so the
- * calendar day cannot shift between timezones.
- * @throws {TypeError} for anything that is not a real date or Date instance.
+ * Only a `YYYY-MM-DD` string is accepted. PostgreSQL `date` values are mapped to
+ * strings precisely to avoid the local-midnight `Date` shift, so accepting a
+ * `Date` here would invite the bug the type parser was added to prevent.
+ * @throws {TypeError} for anything that is not a real `YYYY-MM-DD` date.
  */
 export function formatDate(value) {
-  if (typeof value === 'string') {
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-    if (!match) {
-      throw new TypeError(`formatDate: expected YYYY-MM-DD, got ${value}`);
-    }
-    const [, year, month, day] = match;
-    const probe = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
-    const isRealDate =
-      probe.getUTCFullYear() === Number(year) &&
-      probe.getUTCMonth() === Number(month) - 1 &&
-      probe.getUTCDate() === Number(day);
-    if (!isRealDate) {
-      throw new TypeError(`formatDate: ${value} is not a real calendar date`);
-    }
-    return `${day}.${month}.${year}`;
+  if (typeof value !== 'string') {
+    throw new TypeError('formatDate: expected a YYYY-MM-DD string');
   }
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return dateFormatter.format(value);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    throw new TypeError(`formatDate: expected YYYY-MM-DD, got ${value}`);
   }
-  throw new TypeError('formatDate: expected a YYYY-MM-DD string or a valid Date');
+  const [, year, month, day] = match;
+  const probe = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  const isRealDate =
+    probe.getUTCFullYear() === Number(year) &&
+    probe.getUTCMonth() === Number(month) - 1 &&
+    probe.getUTCDate() === Number(day);
+  if (!isRealDate) {
+    throw new TypeError(`formatDate: ${value} is not a real calendar date`);
+  }
+  return `${day}.${month}.${year}`;
 }
 
 /**

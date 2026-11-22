@@ -10,7 +10,9 @@
 <header class="app-header">
   <div class="app-header__inner">
     <a class="wordmark" href="/dashboard" aria-label="Motherload — на главную">MOTHERLOAD</a>
+
     <%- include('./nav') %>
+
     <div class="app-header__user">
       <p class="app-header__identity">
         <span class="app-header__name"><%= displayName %></span>
@@ -21,5 +23,25 @@
         <button class="btn btn--ghost btn--sm" type="submit">Выйти</button>
       </form>
     </div>
+
+    <details class="app-nav__burger">
+      <summary class="app-nav__burger-summary">
+        <span class="app-nav__burger-icon" aria-hidden="true"></span>
+        <span>Меню</span>
+      </summary>
+      <div class="app-nav__burger-panel">
+        <nav aria-label="Мобильная навигация">
+          <%- include('./nav-links', {
+            navListClass: 'app-nav__burger-list',
+            navItemClass: 'app-nav__burger-item',
+            navLinkClass: 'app-nav__burger-link',
+          }) %>
+        </nav>
+        <form class="app-nav__burger-logout" method="post" action="/logout">
+          <%- csrfField() %>
+          <button class="btn btn--outline btn--sm" type="submit">Выйти</button>
+        </form>
+      </div>
+    </details>
   </div>
 </header>
