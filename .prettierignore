@@ -1,0 +1,10 @@
+package-lock.json
+*.md
+.superpowers/
+.agents/
+coverage/
+backups/
+tmp/
+public/vendor/
+public/fonts/
+public/img/

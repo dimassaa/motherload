@@ -9,3 +9,9 @@ backups/
 tmp/
 public/uploads/
 .cache/
+certs/
+public/vendor/
+# Fonts copied from node_modules by scripts/copy-vendor.js are reproducible.
+# The NBRB BYN sign font is a committed source asset, hence the re-include.
+public/fonts/*.woff2
+!public/fonts/nbrb.woff2
