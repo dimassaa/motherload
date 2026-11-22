@@ -1,0 +1,17 @@
+<section class="dashboard" aria-labelledby="dashboard-title">
+  <p class="axis-label">
+    <span>[ Обзор ]</span>
+    <span><%= roleLabel(currentUser.role) %></span>
+  </p>
+
+  <h1 id="dashboard-title" class="landing__title">Обзор склада</h1>
+
+  <p class="landing__lead">
+    KPI, графики стоимости запасов и лента последних движений появятся на следующем этапе.
+  </p>
+
+  <form class="form-actions" method="post" action="/logout">
+    <%- csrfField() %>
+    <button class="btn btn--outline" type="submit">Выйти</button>
+  </form>
+</section>

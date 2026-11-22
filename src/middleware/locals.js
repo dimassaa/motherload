@@ -19,6 +19,7 @@ export function attachLocals(req, res, next) {
   res.locals.formatDateTime = helpers.formatDateTime;
   res.locals.formatPct = helpers.formatPct;
   res.locals.money = helpers.money;
+  res.locals.roleLabel = helpers.roleLabel;
   res.locals.statusChip = helpers.statusChip;
   res.locals.queryString = helpers.queryString;
 

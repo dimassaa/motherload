@@ -1,11 +1,6 @@
 <%
-  const roleLabels = {
-    admin: 'Администратор',
-    storekeeper: 'Кладовщик',
-    analyst: 'Аналитик',
-  };
   const displayName = currentUser.fullName ?? currentUser.name ?? currentUser.email;
-  const roleLabel = roleLabels[currentUser.role] ?? currentUser.role;
+  const displayRole = roleLabel(currentUser.role);
 %>
 <header class="app-header">
   <div class="app-header__inner">
@@ -16,7 +11,7 @@
     <div class="app-header__user">
       <p class="app-header__identity">
         <span class="app-header__name"><%= displayName %></span>
-        <span class="app-header__role tag tag--plain"><%= roleLabel %></span>
+        <span class="app-header__role tag tag--plain"><%= displayRole %></span>
       </p>
       <form class="app-header__logout" method="post" action="/logout">
         <%- csrfField() %>

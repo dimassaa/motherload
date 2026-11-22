@@ -1,5 +1,68 @@
 import 'dotenv/config';
+import { isIP } from 'node:net';
 import { z } from 'zod';
+
+const PROXY_KEYWORDS = new Set(['loopback', 'linklocal', 'uniquelocal']);
+
+function isValidProxyToken(token) {
+  if (PROXY_KEYWORDS.has(token)) return true;
+
+  const [address, prefix, extra] = token.split('/');
+  if (extra !== undefined) return false;
+
+  const family = isIP(address);
+  if (family === 0) return false;
+  if (prefix === undefined) return true;
+  if (!/^\d+$/.test(prefix)) return false;
+
+  return Number(prefix) <= (family === 4 ? 32 : 128);
+}
+
+/**
+ * Parse TRUST_PROXY into the value Express expects.
+ *
+ * `false` (the default) means the application is reachable directly and must
+ * ignore X-Forwarded-For; a number is a proxy hop count; a keyword or address
+ * list is handed to Express. `true` is rejected because trusting every peer
+ * lets any client spoof its IP and bypass per-IP rate limits.
+ * @param {string} value
+ * @returns {false | number | string}
+ * @throws {Error} when the value is not a supported Express trust-proxy setting
+ */
+export function parseTrustProxy(value) {
+  const normalized = value.trim();
+
+  if (normalized === '' || normalized === 'false') return false;
+
+  if (/^\d+$/.test(normalized)) {
+    const hops = Number(normalized);
+    // A real proxy chain is short. An absurd hop count would make Express walk
+    // past the list and silently stop resolving a trustworthy client address.
+    if (!Number.isSafeInteger(hops) || hops > 32) {
+      throw new Error(`TRUST_PROXY="${value}" — число переходов должно быть от 0 до 32`);
+    }
+    return hops;
+  }
+
+  if (normalized === 'true') {
+    throw new Error(
+      'TRUST_PROXY=true доверяет любому прокси; укажите число переходов, loopback или список адресов',
+    );
+  }
+
+  const tokens = normalized
+    .split(',')
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  if (tokens.length === 0 || !tokens.every(isValidProxyToken)) {
+    throw new Error(
+      `TRUST_PROXY="${value}" — ожидается false, число переходов, loopback/linklocal/uniquelocal или список IP/CIDR`,
+    );
+  }
+
+  return tokens.join(',');
+}
 
 const isoDate = z
   .string()
@@ -33,6 +96,18 @@ const environmentSchema = z
       .positive('ожидается положительное число часов'),
     APP_URL: z.url('нужен полный URL, например http://localhost:3000'),
     HTTPS: z.enum(['0', '1', 'true', 'false'], { error: 'допустимо 0 или 1' }),
+    // Direct Docker port publishing has no proxy in front, so `false` is the
+    // safe default. Behind a reverse proxy set a hop count or `loopback`.
+    TRUST_PROXY: z
+      .string()
+      .default('false')
+      .superRefine((value, context) => {
+        try {
+          parseTrustProxy(value);
+        } catch (error) {
+          context.addIssue({ code: 'custom', message: error.message });
+        }
+      }),
     TLS_CERT_PATH: z.string().optional(),
     TLS_KEY_PATH: z.string().optional(),
     SEED_DEMO: z.enum(['0', '1', 'true', 'false'], { error: 'допустимо 0 или 1' }),
@@ -104,6 +179,7 @@ export const env = Object.freeze({
   sessionTtlHours: config.SESSION_TTL_HOURS,
   appUrl: config.APP_URL,
   https: httpsEnabled,
+  trustProxy: parseTrustProxy(config.TRUST_PROXY),
   tlsCertPath: config.TLS_CERT_PATH ?? '',
   tlsKeyPath: config.TLS_KEY_PATH ?? '',
   seedDemo: config.SEED_DEMO === '1' || config.SEED_DEMO === 'true',
