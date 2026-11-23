@@ -18,7 +18,6 @@ export const DIRECTORY_ENTITIES = Object.freeze({
     updateMessage: 'Изменения категории сохранены.',
     deleteMessage: 'Категория удалена.',
     notFoundMessage: 'Категория не найдена.',
-    canDeactivate: false,
   },
   manufacturers: {
     label: 'Производители',
@@ -28,7 +27,6 @@ export const DIRECTORY_ENTITIES = Object.freeze({
     updateMessage: 'Изменения производителя сохранены.',
     deleteMessage: 'Производитель удалён.',
     notFoundMessage: 'Производитель не найден.',
-    canDeactivate: false,
   },
   suppliers: {
     label: 'Поставщики',
@@ -38,7 +36,6 @@ export const DIRECTORY_ENTITIES = Object.freeze({
     updateMessage: 'Изменения поставщика сохранены.',
     deleteMessage: 'Поставщик удалён.',
     notFoundMessage: 'Поставщик не найден.',
-    canDeactivate: true,
   },
   warehouses: {
     label: 'Склады',
@@ -48,7 +45,6 @@ export const DIRECTORY_ENTITIES = Object.freeze({
     updateMessage: 'Изменения склада сохранены.',
     deleteMessage: 'Склад удалён.',
     notFoundMessage: 'Склад не найден.',
-    canDeactivate: true,
   },
 });
 
@@ -128,7 +124,10 @@ export function listEntities() {
 
 // An aborted unique insert leaves the transaction dead; translating after the
 // rollback keeps the original constraint name available on the error object.
-function translateDatabaseError(error, entity) {
+// The RESTRICT message is delete-specific, so it is only emitted for `remove`;
+// a foreign-key failure on create/update is unexpected and reaches the central
+// 500 handler instead of claiming something could not be deleted.
+function translateDatabaseError(error, entity, operation) {
   if (error?.code === UNIQUE_VIOLATION) {
     const duplicate = UNIQUE_MESSAGES[entity]?.[error.constraint];
     if (duplicate) {
@@ -137,7 +136,10 @@ function translateDatabaseError(error, entity) {
     throw new ValidationError(GENERIC_UNIQUE_MESSAGE);
   }
 
-  if (error?.code === FOREIGN_KEY_VIOLATION || error?.code === RESTRICT_VIOLATION) {
+  if (
+    operation === 'delete' &&
+    (error?.code === FOREIGN_KEY_VIOLATION || error?.code === RESTRICT_VIOLATION)
+  ) {
     throw new ConflictError(DELETE_CONFLICT_MESSAGES[entity]);
   }
 
@@ -197,7 +199,7 @@ export async function create(entity, data, { req }) {
       return created;
     });
   } catch (error) {
-    translateDatabaseError(error, entity);
+    translateDatabaseError(error, entity, 'create');
   }
 }
 
@@ -235,7 +237,7 @@ export async function update(entity, id, data, { req }) {
       return updated;
     });
   } catch (error) {
-    translateDatabaseError(error, entity);
+    translateDatabaseError(error, entity, 'update');
   }
 }
 
@@ -273,6 +275,6 @@ export async function remove(entity, id, { req }) {
       return removed;
     });
   } catch (error) {
-    translateDatabaseError(error, entity);
+    translateDatabaseError(error, entity, 'delete');
   }
 }

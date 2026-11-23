@@ -1,4 +1,4 @@
-import { NotFoundError, ValidationError } from '../domain/errors.js';
+import { ConflictError, NotFoundError, ValidationError } from '../domain/errors.js';
 import { fieldErrorsFromZod, messagesFromZod } from '../middleware/validate.js';
 import * as directoriesService from '../services/directories.js';
 import { DIRECTORY_SCHEMAS } from '../validation/directories.js';
@@ -26,11 +26,16 @@ function parseRecordId(raw) {
   return id;
 }
 
-/** `?edit=` is optional: an empty or malformed value just shows the create form. */
+/**
+ * `?edit=` is optional only when absent. Any value that is not a positive
+ * integer names no record and gets the same 404 as a valid-but-missing id,
+ * instead of silently pretending the edit link was never used.
+ */
 function parseEditId(raw) {
-  if (raw === undefined || raw === '') return null;
+  if (raw === undefined) return null;
   const id = Number(raw);
-  return Number.isInteger(id) && id > 0 ? id : null;
+  if (!Number.isInteger(id) || id <= 0) throw new NotFoundError('Запись не найдена.');
+  return id;
 }
 
 /** Defaults for an empty form. Active rows are the useful default for new records. */
@@ -201,14 +206,27 @@ export async function updateDirectory(req, res, next) {
 
 /** `POST /admin/directories/:entity/:id/delete` — remove an unreferenced row. */
 export async function deleteDirectory(req, res, next) {
+  let entity;
   try {
-    const entity = resolveEntity(req.params.entity);
+    entity = resolveEntity(req.params.entity);
     const id = parseRecordId(req.params.id);
 
     await directoriesService.remove(entity, id, { req });
     req.flash('success', directoriesService.getEntityMeta(entity).deleteMessage);
     res.redirect(`${BASE_PATH}/${entity}`);
   } catch (error) {
+    // A referenced row is a page-level conflict, not a broken request: keep the
+    // admin on the active tab with the explanation in the form-errors area.
+    // Everything unexpected still goes to the central handler (Task 6).
+    if (entity && error instanceof ConflictError) {
+      await renderDirectories(res, {
+        entity,
+        status: 409,
+        values: defaultValues(entity),
+        errors: [error.message],
+      });
+      return;
+    }
     next(error);
   }
 }

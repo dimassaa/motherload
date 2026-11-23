@@ -36,6 +36,16 @@ user-facing contract becomes visible.
   header is taller on those widths. A compact admin menu can be considered once
   the remaining sections add their own navigation entries.
 
+## 2026-11-23, Task 7 — remaining §5.19 error pages for directories
+
+A refused directory delete now re-renders the active tab at 409 with the
+explanation in the page's form-errors area. Two directory responses still use the
+Task 4 bootstrap HTML without the app layout: a 403 for a non-admin on
+`/admin/directories*` and a 404 for an unknown entity or a malformed/missing
+`?edit=` id. That gap is the same one already listed under Task 5 and belongs to
+Task 6, which replaces `src/middleware/errors.js` with the shared error views.
+Listed here so the directory surface is explicitly covered by that task.
+
 ## 2026-11-22, Task 4 — auth session and rate-limit notes
 
 - Rate-limit counters live in process memory. The spec deploys one application

@@ -145,6 +145,29 @@ test('an UNP that is not nine digits is rejected by the form', async () => {
   assert.equal(await findSupplierByUnp('12345ABCD'), null);
 });
 
+test('an unrecognized activity value is rejected instead of becoming inactive', async () => {
+  const { agent } = await signInAs('admin');
+  const token = await getCsrf(agent, '/admin/directories/suppliers');
+
+  const res = await agent
+    .post('/admin/directories/suppliers')
+    .type('form')
+    .send({ ...supplierPayload({ isActive: 'maybe' }), _csrf: token });
+
+  assert.equal(res.status, 400);
+  assert.match(res.text, /Выберите статус/);
+  assert.equal(await findSupplierByUnp('190000001'), null);
+});
+
+test('a malformed edit link is a 404, not a silent create form', async () => {
+  const { agent } = await signInAs('admin');
+
+  const res = await agent.get('/admin/directories/suppliers?edit=not-a-number');
+
+  assert.equal(res.status, 404);
+  assert.match(res.text, /Запись не найдена/);
+});
+
 test('a warehouse referenced by a document cannot be deleted and the reason is shown', async () => {
   const warehouse = await createWarehouseFactory({ code: 'WH-REF' });
   const supplier = await createSupplierFactory();
@@ -164,8 +187,13 @@ test('a warehouse referenced by a document cannot be deleted and the reason is s
     .send({ _csrf: token });
 
   assert.equal(res.status, 409);
-  assert.match(res.text, /склад/i);
+  assert.match(res.text, /Нельзя удалить склад/);
   assert.match(res.text, /ссылаются|используется/i);
+  // The admin stays on the directories shell, not the bare central error page.
+  assert.match(res.text, /<h1[^>]*>Справочники<\/h1>/);
+  assert.match(res.text, /class="form-errors"/);
+  assert.match(res.text, /\/admin\/directories\/warehouses/);
+  assert.match(res.text, /WH-REF/, 'the still-present warehouse must be listed on the page');
 
   const { rows } = await query('select count(*)::integer as count from warehouses where id = $1', [
     warehouse.id,
@@ -189,6 +217,15 @@ test('storekeeper cannot open or mutate the directory page', async () => {
     .send({ ...supplierPayload({ unp: '290000002' }), _csrf: token });
   assert.equal(write.status, 403);
   assert.equal(await findSupplierByUnp('290000002'), null);
+});
+
+test('an analyst cannot open directories', async () => {
+  const { agent } = await signInAs('analyst');
+
+  const res = await agent.get('/admin/directories/categories');
+
+  assert.equal(res.status, 403);
+  assert.match(res.text, /Недостаточно прав/);
 });
 
 test('an unreferenced warehouse can be edited and deleted, and both actions are audited', async () => {
@@ -224,4 +261,68 @@ test('an unreferenced warehouse can be edited and deleted, and both actions are 
 
   assert.equal((await findAudit('directory.update')).length, 1);
   assert.equal((await findAudit('directory.delete')).length, 1);
+});
+
+test('category and manufacturer rows can be created and deleted through the generic paths', async () => {
+  const { agent } = await signInAs('admin');
+
+  const categoryToken = await getCsrf(agent, '/admin/directories/categories');
+  const categoryCreate = await agent.post('/admin/directories/categories').type('form').send({
+    name: 'Охлаждение',
+    slug: 'cooling',
+    description: 'Кулеры и вентиляторы',
+    sortOrder: '10',
+    _csrf: categoryToken,
+  });
+
+  assert.equal(categoryCreate.status, 302);
+  assert.equal(categoryCreate.headers.location, '/admin/directories/categories');
+
+  const category = await query('select id, slug, sort_order from categories where name = $1', [
+    'Охлаждение',
+  ]);
+  assert.equal(category.rows.length, 1);
+  assert.equal(category.rows[0].slug, 'cooling');
+  assert.equal(category.rows[0].sort_order, 10);
+
+  const categoryDelete = await agent
+    .post(`/admin/directories/categories/${category.rows[0].id}/delete`)
+    .type('form')
+    .send({ _csrf: categoryToken });
+  assert.equal(categoryDelete.status, 302);
+  assert.equal(categoryDelete.headers.location, '/admin/directories/categories');
+  assert.equal((await query('select count(*)::integer as count from categories')).rows[0].count, 0);
+
+  const manufacturerToken = await getCsrf(agent, '/admin/directories/manufacturers');
+  const manufacturerCreate = await agent
+    .post('/admin/directories/manufacturers')
+    .type('form')
+    .send({ name: 'ТехноКорп-Тест', country: 'Беларусь', _csrf: manufacturerToken });
+
+  assert.equal(manufacturerCreate.status, 302);
+  assert.equal(manufacturerCreate.headers.location, '/admin/directories/manufacturers');
+
+  const manufacturer = await query('select id, country from manufacturers where name = $1', [
+    'ТехноКорп-Тест',
+  ]);
+  assert.equal(manufacturer.rows.length, 1);
+  assert.equal(manufacturer.rows[0].country, 'Беларусь');
+
+  const manufacturerDelete = await agent
+    .post(`/admin/directories/manufacturers/${manufacturer.rows[0].id}/delete`)
+    .type('form')
+    .send({ _csrf: manufacturerToken });
+  assert.equal(manufacturerDelete.status, 302);
+  assert.equal(manufacturerDelete.headers.location, '/admin/directories/manufacturers');
+  assert.equal(
+    (await query('select count(*)::integer as count from manufacturers')).rows[0].count,
+    0,
+  );
+
+  const creates = await findAudit('directory.create');
+  assert.deepEqual(
+    creates.map((entry) => entry.entity_type),
+    ['category', 'manufacturer'],
+  );
+  assert.equal((await findAudit('directory.delete')).length, 2);
 });

@@ -50,12 +50,23 @@ const optionalEmailSchema = z.preprocess(
     .optional(),
 );
 
+const ACTIVE_VALUES = new Set(['true', 'on', '1']);
+const INACTIVE_VALUES = new Set(['false', 'off', '0']);
+
+/**
+ * The form renders a select with `true`/`false`, but a hand-built request may
+ * send anything. Recognised spellings are normalised; anything else is passed to
+ * `z.boolean` unchanged so it fails with a 400 instead of silently becoming
+ * inactive (which would archive a record on a typo).
+ */
 const activeSchema = z.preprocess(
   (value) => {
     if (value === undefined || value === null || value === '') return true;
-    return value === true || value === 'true' || value === 'on' || value === '1';
+    if (value === true || ACTIVE_VALUES.has(value)) return true;
+    if (value === false || INACTIVE_VALUES.has(value)) return false;
+    return value;
   },
-  z.boolean({ error: 'Выберите статус записи' }),
+  z.boolean({ error: 'Выберите статус: «Активен» или «Неактивен».' }),
 );
 
 const sortOrderSchema = z.preprocess(
@@ -94,7 +105,7 @@ const warehouseCodeSchema = z.preprocess(
 const categorySlugSchema = z.preprocess(
   (value) => (typeof value === 'string' ? value.trim().toLowerCase() : value),
   z
-    .string({ error: 'Укажите slug, например комплектующие' })
+    .string({ error: 'Укажите slug, например cpu-coolers' })
     .min(2, 'Slug должен быть не короче 2 символов')
     .max(60, 'Slug должен быть не длиннее 60 символов')
     .regex(
