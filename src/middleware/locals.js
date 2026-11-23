@@ -24,6 +24,7 @@ export async function attachLocals(req, res, next) {
   res.locals.formatNumber = helpers.formatNumber;
   res.locals.formatDate = helpers.formatDate;
   res.locals.formatDateTime = helpers.formatDateTime;
+  res.locals.formatAge = helpers.formatAge;
   res.locals.formatPct = helpers.formatPct;
   res.locals.money = helpers.money;
   res.locals.roleLabel = helpers.roleLabel;

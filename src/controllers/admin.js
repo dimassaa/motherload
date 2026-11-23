@@ -1,11 +1,17 @@
+import { readdir, stat } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { BACKUP_RETENTION_DAYS, formatFileSize, isBackupExpired } from '../domain/backup.js';
 import { NotFoundError, ValidationError } from '../domain/errors.js';
+import { redactSecrets } from '../domain/redact.js';
 import { fieldErrorsFromZod, messagesFromZod, parseOrThrow } from '../middleware/validate.js';
 import * as auditService from '../services/audit.js';
 import * as usersService from '../services/users.js';
 import { createUserSchema, resetPasswordSchema, updateUserSchema } from '../validation/users.js';
 
 const USERS_PATH = '/admin/users';
+const BACKUPS_DIR = fileURLToPath(new URL('../../backups', import.meta.url));
 
 function isRealDate(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -254,6 +260,16 @@ export async function toggleUser(req, res, next) {
   }
 }
 
+// Secrets must never reach the audit screen or its CSV export. Writers already
+// keep them out of `details` (the service contract says so), but both read
+// surfaces apply the same rule: a missed call site must not leak a hash.
+/** A details block that renders as an em dash instead of `{}` when empty. */
+function detailsJsonOrNull(details) {
+  const redacted = redactSecrets(details ?? {});
+  if (redacted && typeof redacted === 'object' && Object.keys(redacted).length === 0) return null;
+  return JSON.stringify(redacted, null, 2);
+}
+
 /** `GET /admin/audit` — filtered, paginated security log. */
 export async function showAudit(req, res, next) {
   try {
@@ -267,8 +283,15 @@ export async function showAudit(req, res, next) {
       ...entry,
       // Pretty JSON is prepared here so the template stays a renderer; `<%= %>`
       // escapes the result, which also neutralises HTML inside details.
-      detailsJson: JSON.stringify(entry.details ?? {}, null, 2),
+      detailsJson: detailsJsonOrNull(entry.details),
     }));
+
+    // An inverted range is a typo, not "no records": the page says so instead of
+    // showing an empty table that looks like a clean log.
+    const dateRangeMessage =
+      filters.from && filters.to && filters.from > filters.to
+        ? 'Дата «с» позже даты «по» — записей в таком диапазоне быть не может.'
+        : null;
 
     res.render('pages/admin/audit', {
       title: 'Аудит — Motherload',
@@ -278,6 +301,69 @@ export async function showAudit(req, res, next) {
       page: result.page,
       totalPages: result.totalPages,
       total: result.total,
+      dateRangeMessage,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Every `*.dump` in the backups directory, newest first. A missing directory
+ * simply means no backup has been taken yet; the page stays read-only. */
+async function listBackupFiles(directory) {
+  let names;
+  try {
+    names = await readdir(directory);
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+
+  const files = [];
+
+  for (const name of names) {
+    if (!name.endsWith('.dump')) continue;
+    const info = await stat(path.join(directory, name));
+    if (!info.isFile()) continue;
+    files.push({ name, sizeBytes: info.size, modifiedAt: info.mtime });
+  }
+
+  files.sort((left, right) => right.modifiedAt - left.modifiedAt);
+  return files;
+}
+
+/**
+ * `GET /admin/backups` — read-only view of the server-side dump directory.
+ *
+ * The directory is created by `npm run backup`, so a GET never writes to disk;
+ * a missing directory renders the empty state. Dumps are never served over HTTP,
+ * so there is deliberately no download link.
+ */
+export async function showBackups(req, res, next) {
+  try {
+    const files = await listBackupFiles(BACKUPS_DIR);
+    const now = new Date();
+
+    const rows = files.map((file) => ({
+      name: file.name,
+      sizeLabel: formatFileSize(file.sizeBytes),
+      modifiedAt: file.modifiedAt,
+    }));
+
+    const newest = files[0] ?? null;
+    const lastBackup = newest
+      ? {
+          name: newest.name,
+          modifiedAt: newest.modifiedAt,
+          expired: isBackupExpired(newest.modifiedAt, now),
+        }
+      : null;
+
+    res.render('pages/admin/backups', {
+      title: 'Резервные копии — Motherload',
+      files: rows,
+      lastBackup,
+      retentionDays: BACKUP_RETENTION_DAYS,
     });
   } catch (error) {
     next(error);

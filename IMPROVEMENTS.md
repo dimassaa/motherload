@@ -263,3 +263,42 @@ multi-year audit export or a large movement range will grow memory linearly.
 The audit export has no date filter at all. If production volumes appear, add a
 date window to the audit card and stream rows into the response instead of
 joining them in memory.
+
+## 2026-11-23, Task 22 — audit redaction happens on read, not on write
+
+The audit screen replaces values under password/hash/token/secret keys before
+rendering, so a writer that accidentally puts a secret into `details` cannot leak
+it through the UI. The value still lands in `audit_log.details` and stays there
+until the row is deleted; there is no retention job for audit rows. Move the same
+redaction into `auditService.record` when the audit retention task touches the
+service — doing it here would silently rewrite the contract every existing
+mutation relies on.
+
+## 2026-11-23, Task 22 — the connection string is a pg_dump argv element
+
+`scripts/backup.js` and `scripts/restore.js` pass `--dbname=<DATABASE_URL>`, so a
+local user who can list processes sees the database password while the tool is
+running. On a single-admin demo server this is acceptable, but a production
+deployment should split the URL into host/port/user/db arguments and supply the
+password through `PGPASSWORD` or a `.pgpass` file. The scripts never print the
+URL themselves.
+
+## 2026-11-23, Task 22 — scheduler instructions live in DEPLOYMENT.md, which is not written yet
+
+Spec §5.17 asks DEPLOYMENT.md to describe cron and Windows Task Scheduler for
+`npm run backup`. This task added the scripts and the admin page that explains
+them, but deployment documentation is explicitly out of scope, so the scheduler
+section is still missing. The page tells the operator the retention is seven days
+and that dumps never leave the server; the scheduling recipe must be added with
+the Docker/Windows documentation task.
+
+## 2026-11-23, Task 22 fix — the backups page has no directory injection point
+
+`showBackups` reads a module-level `backups/` path, so the integration test has
+to write a uniquely named fixture into the real (gitignored) directory and
+delete it afterwards. A test-only override would be cheap to read but would add
+a `BACKUP_DIR` contract that the backup/restore scripts should then honour too;
+that is a config change, not a test cleanup, so it is deferred. Until then the
+fixture name carries pid and timestamp, and cleanup runs in a `finally` block.
+The page itself no longer creates the directory on `GET`: it renders the empty
+state when `backups/` is absent, and `npm run backup` owns creation.
