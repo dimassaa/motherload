@@ -1450,6 +1450,151 @@ a.app-header__identity:hover {
   word-break: break-word;
 }
 
+/* ------------------------------------------------- Catalog and card views */
+
+/* Sortable header links inherit the mono uppercase label; only the affordance
+   changes so the table does not gain a second visual language. */
+.sort-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sort-link:hover {
+  color: var(--color-deep-fern);
+  text-decoration: underline;
+}
+
+.sort-link:focus-visible {
+  outline: 2px solid var(--color-deep-fern);
+  outline-offset: 2px;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-16);
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.detail-item__label {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.detail-item__value {
+  color: var(--color-forest-ink);
+  font-size: var(--text-body);
+}
+
+.stat-value {
+  margin-top: var(--space-8);
+  color: var(--color-forest-ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-heading-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin-top: var(--space-16);
+}
+
+.section__title .card__title {
+  margin-bottom: 0;
+}
+
+.definition-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin: var(--space-16) 0 0;
+}
+
+.definition-list__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding-bottom: var(--space-8);
+  border-bottom: 1px solid var(--color-lichen);
+  font-size: var(--text-body);
+}
+
+.definition-list__row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.definition-list dt {
+  color: var(--color-text-muted);
+}
+
+.definition-list dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Six-month consumption placeholder. `progress` keeps the bar native and
+   needs no inline width, which the CSP would reject anyway. */
+.consumption-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: var(--space-16) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.consumption-list__row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) 56px;
+  align-items: center;
+  gap: var(--space-12);
+}
+
+.consumption-list__label {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.consumption-list__progress {
+  width: 100%;
+  height: 8px;
+  accent-color: var(--color-pine);
+}
+
+.consumption-list__value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.consumption-list + .page-header__meta {
+  margin-top: var(--space-16);
+}
+
+/* The sign already carries the direction; colour is a secondary cue only. */
+.movement-qty--in {
+  color: var(--color-pine);
+}
+
+.movement-qty--out {
+  color: var(--color-danger);
+}
+
 /* -------------------------------------------------------------- Responsive */
 
 @media (max-width: 1279px) {

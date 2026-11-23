@@ -3,6 +3,7 @@ import * as adminController from '../controllers/admin.js';
 import * as adminComponentsController from '../controllers/admin-components.js';
 import * as adminDirectoriesController from '../controllers/admin-directories.js';
 import * as authController from '../controllers/auth.js';
+import * as componentsController from '../controllers/components.js';
 import * as profileController from '../controllers/profile.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { csrfProtection } from '../middleware/csrf.js';
@@ -33,6 +34,11 @@ export function createWebRouter({ loginLimiter }) {
   router.post('/login', loginLimiter, authController.login);
   router.post('/logout', authController.logout);
   router.get('/dashboard', requireAuth, authController.showDashboard);
+
+  // The catalog is readable by every role. Archiving and editing stay on the
+  // admin routes so the read model cannot be used to mutate a position.
+  router.get('/components', requireAuth, componentsController.showList);
+  router.get('/components/:id', requireAuth, componentsController.showCard);
 
   router.get('/profile', requireAuth, profileController.showProfile);
   router.post('/profile', requireAuth, profileController.updateProfile);
