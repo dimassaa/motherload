@@ -745,7 +745,14 @@ export async function postTransfer({
  * @returns {Promise<{
  *   lines: Array<{
  *     componentId: number,
- *     allocations: Array<{ batchId: number, qty: number, unitCost: string, totalCost: string }>,
+ *     allocations: Array<{
+ *       batchId: number,
+ *       qty: number,
+ *       unitCost: string,
+ *       totalCost: string,
+ *       receivedAt: string | null,
+ *       documentNo: string | null,
+ *     }>,
  *     totalCost: string,
  *   }>,
  *   totalCost: string,
@@ -774,9 +781,18 @@ export async function previewIssue({ warehouseId, lines }) {
   for (const [index, line] of preparedLines.entries()) {
     const batches = await stock.listOpenBatches(pool, line.componentId, warehouse);
     const allocation = allocateFifo(batches, line.qty);
+
+    // `allocateFifo` only needs id, cost and quantity. The form shows the
+    // operator which receipt a consumed batch came from, so the batch metadata
+    // is joined back here rather than widening the pure domain function.
+    const batchesById = new Map(batches.map((batch) => [batch.id, batch]));
     previewLines.push({
       componentId: line.componentId,
-      allocations: allocation.allocations,
+      allocations: allocation.allocations.map((consumed) => ({
+        ...consumed,
+        receivedAt: batchesById.get(consumed.batchId)?.receivedAt ?? null,
+        documentNo: batchesById.get(consumed.batchId)?.documentNo ?? null,
+      })),
       totalCost: toLineTotal(allocation.totalCost, index + 1),
     });
   }
@@ -784,4 +800,108 @@ export async function previewIssue({ warehouseId, lines }) {
   const totalCost = previewLines.reduce((sum, line) => sum.plus(line.totalCost), d(0)).toFixed(2);
 
   return { lines: previewLines, totalCost };
+}
+
+// ---------------------------------------------------------------------------
+// Read models for the stock document screens.
+// ---------------------------------------------------------------------------
+
+const DOCUMENT_PAGE_SIZE = 20;
+
+const DOCUMENT_TYPES = new Set(['receipt', 'issue', 'transfer']);
+
+/**
+ * One page of documents of a single type.
+ *
+ * The page number is clamped to the last page instead of returning an empty
+ * table: a stale bookmark after documents were deleted should still show the
+ * newest rows rather than a blank screen.
+ *
+ * @param {'receipt' | 'issue' | 'transfer'} type
+ * @param {{
+ *   q?: string,
+ *   warehouseId?: number | null,
+ *   supplierId?: number | null,
+ *   fromWarehouseId?: number | null,
+ *   toWarehouseId?: number | null,
+ *   reason?: string | null,
+ *   dateFrom?: string,
+ *   dateTo?: string,
+ *   page?: number,
+ * }} [filters]
+ * @returns {Promise<{
+ *   items: Awaited<ReturnType<typeof stock.listDocumentViews>>,
+ *   total: number,
+ *   page: number,
+ *   pages: number,
+ * }>}
+ */
+export async function listDocuments(type, filters = {}) {
+  if (!DOCUMENT_TYPES.has(type)) {
+    throw new TypeError(`listDocuments: unknown document type "${type}"`);
+  }
+
+  const query = {
+    type,
+    q: filters.q ?? '',
+    warehouseId: filters.warehouseId ?? null,
+    supplierId: filters.supplierId ?? null,
+    fromWarehouseId: filters.fromWarehouseId ?? null,
+    toWarehouseId: filters.toWarehouseId ?? null,
+    reason: filters.reason && filters.reason !== 'all' ? filters.reason : null,
+    dateFrom: filters.dateFrom ?? '',
+    dateTo: filters.dateTo ?? '',
+  };
+
+  const total = await stock.countDocumentViews(query);
+  const pages = Math.max(1, Math.ceil(total / DOCUMENT_PAGE_SIZE));
+  const requested = Number.isInteger(filters.page) && filters.page > 0 ? filters.page : 1;
+  const page = Math.min(requested, pages);
+
+  const items = await stock.listDocumentViews({
+    ...query,
+    limit: DOCUMENT_PAGE_SIZE,
+    offset: (page - 1) * DOCUMENT_PAGE_SIZE,
+  });
+
+  return { items, total, page, pages };
+}
+
+/**
+ * Header and lines of one stock document.
+ *
+ * The expected type is checked here so `/stock/receipts/:id` cannot render an
+ * issue under a receipt URL: a wrong type is indistinguishable from a missing
+ * document to the caller.
+ *
+ * @param {number} documentId
+ * @param {'receipt' | 'issue' | 'transfer'} type
+ * @returns {Promise<{
+ *   document: NonNullable<Awaited<ReturnType<typeof stock.findDocumentView>>>,
+ *   lines: Awaited<ReturnType<typeof stock.listDocumentLineViews>>,
+ *   totalQty: number,
+ * }>}
+ * @throws {NotFoundError} when the document does not exist or has another type
+ */
+export async function getDocumentDetail(documentId, type) {
+  if (!DOCUMENT_TYPES.has(type)) {
+    throw new TypeError(`getDocumentDetail: unknown document type "${type}"`);
+  }
+
+  const id = readId(documentId, 'Документ не найден.');
+  const document = await stock.findDocumentView(id);
+  if (!document || document.type !== type) throw new NotFoundError('Документ не найден.');
+
+  const lines = await stock.listDocumentLineViews(id);
+  const totalQty = lines.reduce((sum, line) => sum + line.qty, 0);
+
+  return { document, lines, totalQty };
+}
+
+/**
+ * Active positions for the no-JavaScript fallback select on stock forms.
+ * @returns {Promise<Array<{ id: number, sku: string, name: string, unit: string }>>}
+ */
+export function listActiveComponents() {
+  return stock.listActiveComponents();
 }

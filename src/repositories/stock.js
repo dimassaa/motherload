@@ -1,3 +1,5 @@
+import { pool } from '../db/pool.js';
+
 // Document number prefixes are part of the paper trail: operators and the
 // printed forms expect ПР (приёмка), РС (расход) and ПМ (перемещение).
 const DOCUMENT_PREFIXES = {
@@ -276,7 +278,7 @@ export async function insertMovement(client, input) {
 
 // One SQL body for both preview and posting: the allocation must see exactly
 // the rows the lock protects. ORDER BY matches allocateFifo's sort keys.
-const OPEN_BATCHES_SQL = `select id, unit_cost, qty_remaining, received_at
+const OPEN_BATCHES_SQL = `select id, unit_cost, qty_remaining, received_at, document_no
   from stock_batches
   where component_id = $1 and warehouse_id = $2 and qty_remaining > 0
   order by received_at, id`;
@@ -289,6 +291,7 @@ function mapBatch(row) {
     // pg-types returns `date` columns as ISO strings, so FIFO ordering stays
     // chronological without a timezone shift.
     receivedAt: row.received_at,
+    documentNo: row.document_no ?? null,
   };
 }
 
@@ -297,7 +300,13 @@ function mapBatch(row) {
  * @param {import('pg').PoolClient | import('pg').Pool} client
  * @param {number} componentId
  * @param {number} warehouseId
- * @returns {Promise<Array<{ id: number, unitCost: string, qtyRemaining: number, receivedAt: string }>>}
+ * @returns {Promise<Array<{
+ *   id: number,
+ *   unitCost: string,
+ *   qtyRemaining: number,
+ *   receivedAt: string,
+ *   documentNo: string | null,
+ * }>>}
  */
 export async function listOpenBatches(client, componentId, warehouseId) {
   const { rows } = await client.query(OPEN_BATCHES_SQL, [componentId, warehouseId]);
@@ -313,7 +322,13 @@ export async function listOpenBatches(client, componentId, warehouseId) {
  * @param {import('pg').PoolClient} client
  * @param {number} componentId
  * @param {number} warehouseId
- * @returns {Promise<Array<{ id: number, unitCost: string, qtyRemaining: number, receivedAt: string }>>}
+ * @returns {Promise<Array<{
+ *   id: number,
+ *   unitCost: string,
+ *   qtyRemaining: number,
+ *   receivedAt: string,
+ *   documentNo: string | null,
+ * }>>}
  */
 export async function lockOpenBatches(client, componentId, warehouseId) {
   const { rows } = await client.query(`${OPEN_BATCHES_SQL} for update`, [componentId, warehouseId]);
@@ -376,4 +391,283 @@ export async function decrementBatchRemaining(client, { batchId, qty }) {
   }
 
   return rows[0].qty_remaining;
+}
+
+// ---------------------------------------------------------------------------
+// Read models for the stock document screens.
+//
+// Money columns stay PostgreSQL numeric strings: the templates format them and
+// never do arithmetic. Only quantities (integer columns) are returned as JS
+// numbers.
+// ---------------------------------------------------------------------------
+
+/**
+ * Escape LIKE metacharacters so a literal `%` or `_` in a filter stays literal.
+ * @param {string} value
+ * @returns {string}
+ */
+function likePattern(value) {
+  return `%${value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`;
+}
+
+// Shared header projection for lists and the document card. Joining both
+// warehouse roles in one query keeps a transfer row readable without a second
+// round trip per warehouse.
+const DOCUMENT_HEADER_SELECT = `
+  select
+    d.id,
+    d.type,
+    d.number,
+    d.doc_date,
+    d.reason,
+    d.comment,
+    d.total_cost,
+    d.created_at,
+    s.name as supplier_name,
+    w.name as warehouse_name,
+    w.city as warehouse_city,
+    fw.name as from_warehouse_name,
+    fw.city as from_warehouse_city,
+    tw.name as to_warehouse_name,
+    tw.city as to_warehouse_city,
+    u.full_name as author_name,
+    (
+      select count(*)::integer
+      from stock_document_lines l
+      where l.document_id = d.id
+    ) as line_count
+  from stock_documents d
+  left join suppliers s on s.id = d.supplier_id
+  left join warehouses w on w.id = d.warehouse_id
+  left join warehouses fw on fw.id = d.from_warehouse_id
+  left join warehouses tw on tw.id = d.to_warehouse_id
+  left join users u on u.id = d.created_by
+`;
+
+function mapDocumentHeader(row) {
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    type: row.type,
+    number: row.number,
+    docDate: row.doc_date,
+    reason: row.reason ?? null,
+    comment: row.comment ?? null,
+    totalCost: row.total_cost,
+    createdAt: row.created_at,
+    supplierName: row.supplier_name ?? null,
+    warehouseName: row.warehouse_name ?? null,
+    warehouseCity: row.warehouse_city ?? null,
+    fromWarehouseName: row.from_warehouse_name ?? null,
+    fromWarehouseCity: row.from_warehouse_city ?? null,
+    toWarehouseName: row.to_warehouse_name ?? null,
+    toWarehouseCity: row.to_warehouse_city ?? null,
+    authorName: row.author_name ?? null,
+    lineCount: row.line_count,
+  };
+}
+
+/**
+ * Build the shared WHERE clause. Every filter is optional; empty values are
+ * already normalised to `null`/`''` by the controller's Zod schema, so this
+ * function only has to append the conditions and their parameters.
+ * @param {{
+ *   type: 'receipt' | 'issue' | 'transfer',
+ *   q?: string,
+ *   warehouseId?: number | null,
+ *   supplierId?: number | null,
+ *   fromWarehouseId?: number | null,
+ *   toWarehouseId?: number | null,
+ *   reason?: string | null,
+ *   dateFrom?: string,
+ *   dateTo?: string,
+ * }} filters
+ */
+function documentFilter(filters) {
+  const conditions = ['d.type = $1'];
+  const params = [filters.type];
+
+  if (filters.q) {
+    params.push(likePattern(filters.q));
+    const index = params.length;
+    conditions.push(
+      `(d.number ilike $${index} escape '\\'
+        or s.name ilike $${index} escape '\\'
+        or w.name ilike $${index} escape '\\'
+        or fw.name ilike $${index} escape '\\'
+        or tw.name ilike $${index} escape '\\')`,
+    );
+  }
+  if (filters.warehouseId) {
+    params.push(filters.warehouseId);
+    conditions.push(`d.warehouse_id = $${params.length}`);
+  }
+  if (filters.supplierId) {
+    params.push(filters.supplierId);
+    conditions.push(`d.supplier_id = $${params.length}`);
+  }
+  if (filters.fromWarehouseId) {
+    params.push(filters.fromWarehouseId);
+    conditions.push(`d.from_warehouse_id = $${params.length}`);
+  }
+  if (filters.toWarehouseId) {
+    params.push(filters.toWarehouseId);
+    conditions.push(`d.to_warehouse_id = $${params.length}`);
+  }
+  if (filters.reason) {
+    params.push(filters.reason);
+    conditions.push(`d.reason = $${params.length}`);
+  }
+  if (filters.dateFrom) {
+    params.push(filters.dateFrom);
+    conditions.push(`d.doc_date >= $${params.length}::date`);
+  }
+  if (filters.dateTo) {
+    params.push(filters.dateTo);
+    conditions.push(`d.doc_date <= $${params.length}::date`);
+  }
+
+  return { where: conditions.join(' and '), params };
+}
+
+/**
+ * One page of documents of a single type, newest first.
+ * @param {Parameters<typeof documentFilter>[0] & { limit: number, offset: number }} filters
+ */
+export async function listDocumentViews(filters) {
+  const { where, params } = documentFilter(filters);
+  const limitIndex = params.length + 1;
+  const offsetIndex = params.length + 2;
+
+  const { rows } = await pool.query(
+    `${DOCUMENT_HEADER_SELECT}
+     where ${where}
+     order by d.doc_date desc, d.id desc
+     limit $${limitIndex} offset $${offsetIndex}`,
+    [...params, filters.limit, filters.offset],
+  );
+
+  return rows.map(mapDocumentHeader);
+}
+
+/**
+ * Total rows matching the same filters, for the pagination footer.
+ * @param {Parameters<typeof documentFilter>[0]} filters
+ * @returns {Promise<number>}
+ */
+export async function countDocumentViews(filters) {
+  const { where, params } = documentFilter(filters);
+  const { rows } = await pool.query(
+    `select count(*)::integer as total
+     from stock_documents d
+     left join suppliers s on s.id = d.supplier_id
+     left join warehouses w on w.id = d.warehouse_id
+     left join warehouses fw on fw.id = d.from_warehouse_id
+     left join warehouses tw on tw.id = d.to_warehouse_id
+     where ${where}`,
+    params,
+  );
+
+  return rows[0].total;
+}
+
+/**
+ * One document header by id.
+ * @param {number} documentId
+ */
+export async function findDocumentView(documentId) {
+  const { rows } = await pool.query(`${DOCUMENT_HEADER_SELECT} where d.id = $1`, [documentId]);
+  return mapDocumentHeader(rows[0]);
+}
+
+/**
+ * Lines of a document with their consumed batches, in stored order.
+ *
+ * `unit_cost::text` is deliberate: a JSON number would arrive in JS as a float,
+ * and money must stay a string all the way to the template.
+ * @param {number} documentId
+ * @returns {Promise<Array<{
+ *   id: number,
+ *   componentId: number,
+ *   sku: string,
+ *   name: string,
+ *   unit: string,
+ *   qty: number,
+ *   unitCost: string,
+ *   totalCost: string,
+ *   comment: string | null,
+ *   allocations: Array<{
+ *     batchId: number,
+ *     qty: number,
+ *     unitCost: string,
+ *     receivedAt: string,
+ *     documentNo: string | null,
+ *   }>,
+ * }>>}
+ */
+export async function listDocumentLineViews(documentId) {
+  const { rows } = await pool.query(
+    `select
+       l.id,
+       l.qty,
+       l.unit_cost,
+       l.total_cost,
+       l.comment,
+       c.id as component_id,
+       c.sku,
+       c.name as component_name,
+       c.unit,
+       coalesce(
+         jsonb_agg(
+           jsonb_build_object(
+             'batchId', bc.batch_id,
+             'qty', bc.qty,
+             'unitCost', bc.unit_cost::text,
+             'receivedAt', b.received_at,
+             'documentNo', b.document_no
+           )
+           order by bc.id
+         ) filter (where bc.id is not null),
+         '[]'::jsonb
+       ) as allocations
+     from stock_document_lines l
+     join components c on c.id = l.component_id
+     left join batch_consumptions bc on bc.line_id = l.id
+     left join stock_batches b on b.id = bc.batch_id
+     where l.document_id = $1
+     group by l.id, c.id
+     order by l.id`,
+    [documentId],
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    componentId: row.component_id,
+    sku: row.sku,
+    name: row.component_name,
+    unit: row.unit,
+    qty: row.qty,
+    unitCost: row.unit_cost,
+    totalCost: row.total_cost,
+    comment: row.comment ?? null,
+    allocations: row.allocations ?? [],
+  }));
+}
+
+/**
+ * Active positions for the fallback `<select>` on stock forms. The type-ahead
+ * replaces this list only when JavaScript is available; without it the native
+ * select keeps the form usable.
+ * @returns {Promise<Array<{ id: number, sku: string, name: string, unit: string }>>}
+ */
+export async function listActiveComponents() {
+  const { rows } = await pool.query(
+    `select id, sku, name, unit
+     from components
+     where is_active
+     order by name, id`,
+  );
+
+  return rows.map((row) => ({ id: row.id, sku: row.sku, name: row.name, unit: row.unit }));
 }

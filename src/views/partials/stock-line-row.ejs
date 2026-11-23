@@ -1,0 +1,98 @@
+<%
+  // One editable line. `index` is the form position used in the field names;
+  // the client-side row template passes `__INDEX__` so the module can rewrite
+  // the names when it clones the row.
+  const selected = components.find(
+    (component) => String(component.id) === String(row.componentId ?? ''),
+  );
+  const searchValue = selected ? `${selected.sku} — ${selected.name}` : '';
+  const fieldId = (suffix) => `stock-line-${index}-${suffix}`;
+%>
+<tr class="table__row stock-line" data-stock-row data-row-index="<%= index %>">
+  <td class="table__cell stock-line__component">
+    <label class="visually-hidden" for="<%= fieldId('component') %>">
+      Позиция, строка <%= index %>
+    </label>
+    <select
+      class="form-field__select"
+      id="<%= fieldId('component') %>"
+      name="lines[<%= index %>][componentId]"
+      data-component-select
+    >
+      <option value="">Выберите позицию</option>
+      <% for (const component of components) { %>
+        <option
+          value="<%= component.id %>"
+          <%- String(row.componentId ?? '') === String(component.id) ? 'selected' : '' %>
+        >
+          <%= component.sku %> — <%= component.name %>
+        </option>
+      <% } %>
+    </select>
+
+    <div class="stock-line__search" data-component-search-wrap hidden>
+      <input
+        class="form-field__input"
+        type="search"
+        autocomplete="off"
+        placeholder="Начните вводить SKU или название"
+        value="<%= searchValue %>"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded="false"
+        aria-controls="<%= fieldId('suggestions') %>"
+        aria-label="Поиск позиции, строка <%= index %>"
+        data-component-search
+      >
+      <ul
+        class="stock-line__suggestions"
+        id="<%= fieldId('suggestions') %>"
+        role="listbox"
+        aria-label="Найденные позиции"
+        data-component-suggestions
+        hidden
+      ></ul>
+    </div>
+  </td>
+
+  <td class="table__cell stock-line__qty">
+    <label class="visually-hidden" for="<%= fieldId('qty') %>">
+      Количество, строка <%= index %>
+    </label>
+    <input
+      class="form-field__input"
+      id="<%= fieldId('qty') %>"
+      name="lines[<%= index %>][qty]"
+      type="text"
+      inputmode="numeric"
+      autocomplete="off"
+      value="<%= row.qty ?? '' %>"
+      data-line-qty
+    >
+  </td>
+
+  <% if (withCost) { %>
+    <td class="table__cell stock-line__cost">
+      <label class="visually-hidden" for="<%= fieldId('unit-cost') %>">
+        Цена за единицу, строка <%= index %>
+      </label>
+      <input
+        class="form-field__input"
+        id="<%= fieldId('unit-cost') %>"
+        name="lines[<%= index %>][unitCost]"
+        type="text"
+        inputmode="decimal"
+        autocomplete="off"
+        value="<%= row.unitCost ?? '' %>"
+        data-line-unit-cost
+      >
+    </td>
+    <td class="table__cell table__cell--num stock-line__total">
+      <span class="stock-line__total-value" data-line-total>0,00</span>
+    </td>
+  <% } %>
+
+  <td class="table__cell stock-line__actions">
+    <button class="btn btn--ghost btn--sm" type="button" data-line-remove>Удалить</button>
+  </td>
+</tr>

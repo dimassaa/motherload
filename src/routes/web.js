@@ -6,6 +6,7 @@ import * as authController from '../controllers/auth.js';
 import * as componentsController from '../controllers/components.js';
 import * as inventoryController from '../controllers/inventory.js';
 import * as profileController from '../controllers/profile.js';
+import * as stockController from '../controllers/stock.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { csrfProtection } from '../middleware/csrf.js';
 import { isDatabaseUp } from '../repositories/health.js';
@@ -40,6 +41,57 @@ export function createWebRouter({ loginLimiter }) {
   // admin routes so the read model cannot be used to mutate a position.
   router.get('/components', requireAuth, componentsController.showList);
   router.get('/components/:id', requireAuth, componentsController.showCard);
+
+  // Stock operations are a storekeeper/admin workflow. Every route enforces
+  // the role on the server; the navigation only hides the links. `/new` is
+  // registered before `/:id` so the literal segment is not swallowed by the id
+  // parameter. Documents are immutable: there are no edit or delete routes.
+  router.get('/stock/receipts', requireRole('admin', 'storekeeper'), stockController.showReceipts);
+  router.get(
+    '/stock/receipts/new',
+    requireRole('admin', 'storekeeper'),
+    stockController.showReceiptForm,
+  );
+  router.post(
+    '/stock/receipts',
+    requireRole('admin', 'storekeeper'),
+    stockController.createReceipt,
+  );
+  router.get(
+    '/stock/receipts/:id',
+    requireRole('admin', 'storekeeper'),
+    stockController.showReceipt,
+  );
+
+  router.get('/stock/issues', requireRole('admin', 'storekeeper'), stockController.showIssues);
+  router.get(
+    '/stock/issues/new',
+    requireRole('admin', 'storekeeper'),
+    stockController.showIssueForm,
+  );
+  router.post('/stock/issues', requireRole('admin', 'storekeeper'), stockController.createIssue);
+  router.get('/stock/issues/:id', requireRole('admin', 'storekeeper'), stockController.showIssue);
+
+  router.get(
+    '/stock/transfers',
+    requireRole('admin', 'storekeeper'),
+    stockController.showTransfers,
+  );
+  router.get(
+    '/stock/transfers/new',
+    requireRole('admin', 'storekeeper'),
+    stockController.showTransferForm,
+  );
+  router.post(
+    '/stock/transfers',
+    requireRole('admin', 'storekeeper'),
+    stockController.createTransfer,
+  );
+  router.get(
+    '/stock/transfers/:id',
+    requireRole('admin', 'storekeeper'),
+    stockController.showTransfer,
+  );
 
   // Inventory is a storekeeper/admin workflow; approval is a separate admin
   // right, so the approve route narrows the role instead of relying on the

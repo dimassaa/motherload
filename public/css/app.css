@@ -145,6 +145,13 @@
   box-sizing: border-box;
 }
 
+/* Class rules such as `display: flex` would otherwise override the user-agent
+   `[hidden] { display: none }`, leaving skeletons and empty preview panels
+   visible. `hidden` is the state toggled by the progressive-enhancement code. */
+[hidden] {
+  display: none !important;
+}
+
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -1776,6 +1783,220 @@ a.app-header__identity:hover {
   font-size: var(--text-body);
 }
 
+/* ------------------------------------------------------- Stock operations */
+
+/* The line table needs the full working width, not the 760px form column used
+   by the simpler admin forms. */
+.stock-form {
+  max-width: 1080px;
+}
+
+.stock-form__section-title {
+  margin-top: var(--space-24);
+}
+
+.form-field--wide {
+  grid-column: 1 / -1;
+}
+
+.stock-lines {
+  margin-top: var(--space-16);
+}
+
+/* The visually hidden labels inside the row are absolutely positioned. Without
+   a containing block here they escape the horizontal scroll container and
+   stretch the whole page on a phone. */
+.stock-lines .table-wrap {
+  position: relative;
+}
+
+.stock-lines__table {
+  min-width: 640px;
+}
+
+.stock-lines__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-12);
+  margin-top: var(--space-12);
+}
+
+.stock-line__component {
+  min-width: 280px;
+}
+
+.stock-line__qty,
+.stock-line__cost,
+.stock-line__total {
+  width: 120px;
+}
+
+.stock-line__total-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.stock-line__actions {
+  width: 96px;
+  text-align: right;
+}
+
+/* Type-ahead. The list is absolutely positioned inside the field cell so it
+   overlays the table rows instead of stretching the document. */
+.stock-line__search {
+  position: relative;
+}
+
+.stock-line__suggestions {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  margin: 0;
+  padding: var(--space-4);
+  overflow-y: auto;
+  border-radius: var(--radius-card);
+  background: var(--color-bone-white);
+  box-shadow: 0 0 0 1px var(--color-lichen);
+  list-style: none;
+}
+
+.stock-line__suggestion {
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-tag);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.stock-line__suggestion:hover,
+.stock-line__suggestion--active {
+  background: var(--color-ash-gray);
+}
+
+.stock-line__suggestion--muted {
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
+.stock-total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: var(--space-8);
+  margin-top: var(--space-16);
+  font-family: var(--font-mono);
+}
+
+.stock-total__label {
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.stock-total__value {
+  font-size: var(--text-heading-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* FIFO preview. It lives in the form as a card-like block; the skeleton is the
+   only loading affordance, never a full-screen spinner. */
+.stock-preview {
+  margin-top: var(--space-24);
+  padding: var(--space-16);
+  border-radius: var(--radius-card);
+  background: var(--color-ash-gray);
+}
+
+.stock-preview__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin-top: var(--space-12);
+}
+
+.stock-preview__skeleton-line {
+  display: block;
+  height: 14px;
+}
+
+.stock-preview__skeleton-line:nth-child(2) {
+  width: 82%;
+}
+
+.stock-preview__skeleton-line:nth-child(3) {
+  width: 64%;
+}
+
+.stock-preview__total {
+  margin-top: var(--space-12);
+  font-family: var(--font-mono);
+  font-size: var(--text-subheading);
+  font-variant-numeric: tabular-nums;
+}
+
+.stock-preview__line + .stock-preview__line {
+  margin-top: var(--space-12);
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--color-lichen);
+}
+
+.stock-preview__line-title {
+  font-weight: 500;
+}
+
+.stock-preview__allocations {
+  margin: var(--space-4) 0 0;
+  padding-left: var(--space-20);
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+/* Document card. Document lines are immutable, so the allocation detail sits
+   in a normal table row instead of a disclosure widget. */
+.stock-document {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.stock-document__comment {
+  margin-top: var(--space-16);
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--color-lichen);
+}
+
+.stock-document__allocations-row .table__cell {
+  background: var(--color-ash-gray);
+}
+
+.stock-document__allocations-title {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.stock-document__allocations {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-8);
+  padding-left: var(--space-16);
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.stock-document__allocation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-12);
+}
+
 /* -------------------------------------------------------------- Responsive */
 
 @media (max-width: 1279px) {
@@ -1859,6 +2080,10 @@ a.app-header__identity:hover {
 
   .form-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .stock-total {
+    justify-content: flex-start;
   }
 
   .page-header__title {

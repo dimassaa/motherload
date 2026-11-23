@@ -1,0 +1,130 @@
+<section class="stock-list-page" aria-labelledby="transfers-title">
+  <div class="page-header">
+    <div>
+      <h1 id="transfers-title" class="page-header__title">Перемещения</h1>
+      <p class="page-header__meta">Всего документов: <%= total %></p>
+    </div>
+    <a class="btn btn--primary" href="/stock/transfers/new">Новое перемещение</a>
+  </div>
+
+  <form class="filter-bar" method="get" action="/stock/transfers">
+    <div class="form-field">
+      <label class="form-field__label" for="transfers-q">Поиск</label>
+      <input
+        class="form-field__input"
+        id="transfers-q"
+        name="q"
+        type="search"
+        placeholder="Номер или склад"
+        value="<%= filters.q %>"
+      >
+    </div>
+
+    <div class="form-field">
+      <label class="form-field__label" for="transfers-from">Откуда</label>
+      <select class="form-field__select" id="transfers-from" name="fromWarehouseId">
+        <option value="">Любой склад</option>
+        <% for (const warehouse of warehouses) { %>
+          <option
+            value="<%= warehouse.id %>"
+            <%- filters.fromWarehouseId === warehouse.id ? 'selected' : '' %>
+          >
+            <%= warehouse.name %>
+          </option>
+        <% } %>
+      </select>
+    </div>
+
+    <div class="form-field">
+      <label class="form-field__label" for="transfers-to">Куда</label>
+      <select class="form-field__select" id="transfers-to" name="toWarehouseId">
+        <option value="">Любой склад</option>
+        <% for (const warehouse of warehouses) { %>
+          <option
+            value="<%= warehouse.id %>"
+            <%- filters.toWarehouseId === warehouse.id ? 'selected' : '' %>
+          >
+            <%= warehouse.name %>
+          </option>
+        <% } %>
+      </select>
+    </div>
+
+    <div class="form-field">
+      <label class="form-field__label" for="transfers-date-from">С даты</label>
+      <input
+        class="form-field__input"
+        id="transfers-date-from"
+        name="dateFrom"
+        type="date"
+        value="<%= filters.dateFrom %>"
+      >
+    </div>
+
+    <div class="form-field">
+      <label class="form-field__label" for="transfers-date-to">По дату</label>
+      <input
+        class="form-field__input"
+        id="transfers-date-to"
+        name="dateTo"
+        type="date"
+        value="<%= filters.dateTo %>"
+      >
+    </div>
+
+    <div class="filter-bar__actions">
+      <button class="btn btn--outline btn--sm" type="submit">Применить</button>
+      <a class="btn btn--ghost btn--sm" href="/stock/transfers">Сбросить</a>
+    </div>
+  </form>
+
+  <% if (items.length === 0) { %>
+    <%- include('../../partials/empty-state', {
+      title: total === 0 ? 'Перемещений пока нет' : 'По выбранным условиям ничего не найдено',
+      text:
+        total === 0
+          ? 'Перемещение переносит партии между складами, сохраняя себестоимость.'
+          : 'Измените фильтры или сбросьте их, чтобы увидеть все документы.',
+      actionHref: '/stock/transfers/new',
+      actionLabel: 'Новое перемещение',
+    }) %>
+  <% } else { %>
+    <div class="table-wrap">
+      <table class="table">
+        <thead class="table__head">
+          <tr>
+            <th class="table__heading" scope="col">Номер</th>
+            <th class="table__heading" scope="col">Дата</th>
+            <th class="table__heading" scope="col">Откуда</th>
+            <th class="table__heading" scope="col">Куда</th>
+            <th class="table__heading table__cell--num" scope="col">Позиций</th>
+            <th class="table__heading table__cell--num" scope="col">Себестоимость</th>
+            <th class="table__heading" scope="col">Автор</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% for (const item of items) { %>
+            <tr class="table__row">
+              <td class="table__cell table__cell--code">
+                <a href="/stock/transfers/<%= item.id %>"><%= item.number %></a>
+              </td>
+              <td class="table__cell"><%= formatDate(item.docDate) %></td>
+              <td class="table__cell"><%= item.fromWarehouseName ?? '—' %></td>
+              <td class="table__cell"><%= item.toWarehouseName ?? '—' %></td>
+              <td class="table__cell table__cell--num"><%= formatQty(item.lineCount) %></td>
+              <td class="table__cell table__cell--num"><%- money(item.totalCost) %></td>
+              <td class="table__cell"><%= item.authorName ?? '—' %></td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+
+    <%- include('../../partials/pagination', {
+      page,
+      totalPages: pages,
+      basePath: meta.listPath,
+      params,
+    }) %>
+  <% } %>
+</section>

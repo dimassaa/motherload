@@ -1,0 +1,54 @@
+<%
+  // `rows` is whatever the operator submitted (or one empty row on a fresh
+  // form). The native select is the no-JavaScript path; the search box is
+  // revealed by the page module and writes its choice back into the select.
+  const emptyRow = { componentId: '', qty: '', unitCost: '' };
+%>
+<div class="stock-lines" data-stock-lines data-with-cost="<%= withCost %>">
+  <noscript>
+    <p class="notice notice--warning" role="note">
+      <strong>Добавление строк требует JavaScript.</strong>
+      Без него доступна одна строка: выберите позицию, количество<% if (withCost) { %>,
+      цену<% } %> и проведите документ. Включите JavaScript, чтобы добавлять и удалять строки —
+      остальное в форме работает и без него.
+    </p>
+  </noscript>
+
+  <div class="table-wrap">
+    <table class="table stock-lines__table">
+      <thead class="table__head">
+        <tr>
+          <th class="table__heading" scope="col">Позиция</th>
+          <th class="table__heading" scope="col">Количество</th>
+          <% if (withCost) { %>
+            <th class="table__heading" scope="col">Цена за единицу</th>
+            <th class="table__heading table__cell--num" scope="col">Сумма</th>
+          <% } %>
+          <th class="table__heading" scope="col">
+            <span class="visually-hidden">Действия</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody data-stock-rows>
+        <% for (const [index, row] of rows.entries()) { %>
+          <%- include('./stock-line-row', { index, row, components, withCost }) %>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+
+  <template data-stock-row-template>
+    <%- include('./stock-line-row', { index: '__INDEX__', row: emptyRow, components: [], withCost }) %>
+  </template>
+
+  <div class="stock-lines__actions">
+    <button class="btn btn--outline btn--sm" type="button" data-stock-add>Добавить строку</button>
+    <p class="form-field__hint">
+      <% if (withCost) { %>
+        Сумма пересчитывается в браузере, но сервер проверяет и пересчитывает её заново.
+      <% } else { %>
+        Себестоимость определит сервер по FIFO при проведении; предпросмотр ниже её покажет.
+      <% } %>
+    </p>
+  </div>
+</div>
