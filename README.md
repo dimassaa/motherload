@@ -137,6 +137,8 @@ docker compose up --build
 | `npm run smoke` | браузерный сценарий; нужен запущенный сервер и `agent-browser`; адрес — `APP_URL` (по умолчанию `http://localhost:3000`) |
 | `docker compose up --build` | полный запуск в Docker |
 
+На Windows для `npm run smoke` нужен Git Bash или WSL: скрипт написан на `bash` и использует `curl` и `agent-browser`.
+
 ## Архитектура
 
 ```
@@ -208,7 +210,7 @@ test/integration/    Supertest + PostgreSQL
 
 **`docker: unknown command: docker compose`.** Установлен только Docker Engine без плагина Compose v2. Поставьте `docker-compose-plugin` (Linux) или используйте Docker Desktop; устаревшая команда `docker-compose` в инструкции не используется.
 
-**Compose пишет `SESSION_SECRET must be set in .env`.** Файл `.env` не создан, пуст или секрет короче 32 символов. Скопируйте `.env.example` и задайте значение.
+**Compose пишет `SESSION_SECRET must be set in .env`.** Файл `.env` не создан или переменная пуста. Скопируйте `.env.example` и задайте значение. Compose проверяет только наличие непустой переменной; минимум 32 символа проверяет уже Node при старте, иначе сервер остановится с сообщением «SESSION_SECRET — минимум 32 символа».
 
 **`schema_migrations` от старой версии.** Мигратор хранит в таблице полные имена файлов. Если база осталась от раннего прототипа с другим форматом версий, текущие миграции попытаются примениться поверх существующих объектов и упадут. Проверьте историю:
 

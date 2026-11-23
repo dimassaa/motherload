@@ -157,7 +157,7 @@ function buildMessage(pair) {
     return `${label}: остаток ${formatQty(pair.balance)} ${pair.unit}. при максимуме ${formatQty(pair.maxStock)} ${pair.unit}. ${warehouse}`;
   }
 
-  return `${label}: остаток ${formatQty(pair.balance)} ${pair.unit}. без движения ${DEAD_STOCK_DAYS}+ дней. ${warehouse}`;
+  return `${label}: остаток ${formatQty(pair.balance)} ${pair.unit}. не списывался ${DEAD_STOCK_DAYS}+ дней. ${warehouse}`;
 }
 
 /**

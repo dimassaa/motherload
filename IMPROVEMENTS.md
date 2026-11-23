@@ -55,6 +55,16 @@ large central stock and one weak regional warehouse is therefore listed with a
 healthy-looking total. The reorder page is the authoritative per-warehouse view;
 a later catalog pass could add a «N складов ниже ROP» hint to the status cell.
 
+### 2026-11-23, Task 24 — a local shortage can read «В норме» in the catalog
+
+The aggregate `below_min` rule compares the total balance with the sum of the
+participating warehouses' `min_stock`. That deliberately stops an empty Minsk
+warehouse from hiding four units in Gomel, but it also means a component with an
+empty active warehouse and enough stock elsewhere shows «В норме» in the
+all-warehouse list. The per-warehouse row and the reorder page still expose the
+local shortage. A later catalog pass could show a «N складов ниже минимума» hint
+next to the aggregate status, as with the ROP note above.
+
 ### 2026-11-23, Task 16 — the inventory list caps at 200 rows
 
 `/inventory` loads the 200 newest counts and has no pagination. That is enough
@@ -170,6 +180,15 @@ backup` inside the app container cannot run, and `backups/` is not a volume, so
 path uses `docker compose exec -T db pg_dump` on the host; mounting `./backups`
 into the app container would make the page useful again. Decide whether to add
 the client tools (larger image) or keep backups host-owned.
+
+### 2026-11-23, Task 24 — the Compose v2 one-command path is unverified
+
+Owner: pre-submission verification on a machine with the Docker Compose v2
+plugin. This environment had the Docker daemon but no plugin, so `docker compose
+up --build` was never executed; the YAML was parsed, and the image, entrypoint,
+migrations, seed and healthcheck passed an equivalent manual two-container run.
+Impact: the documented primary deployment command is still unproven as written
+until that run is repeated and recorded.
 
 ### 2026-11-23, Task 22 — the connection string is a `pg_dump` argv element
 
