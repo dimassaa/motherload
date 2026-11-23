@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as adminController from '../controllers/admin.js';
+import * as adminDirectoriesController from '../controllers/admin-directories.js';
 import * as authController from '../controllers/auth.js';
 import * as profileController from '../controllers/profile.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
@@ -48,6 +49,34 @@ export function createWebRouter({ loginLimiter }) {
   router.post('/admin/users/:id/password', requireRole('admin'), adminController.resetPassword);
   router.post('/admin/users/:id/toggle', requireRole('admin'), adminController.toggleUser);
   router.get('/admin/audit', requireRole('admin'), adminController.showAudit);
+
+  // Reference data is one screen with tabs; the tab is part of the URL so a
+  // bookmark and the back button both return to the same directory.
+  router.get(
+    '/admin/directories',
+    requireRole('admin'),
+    adminDirectoriesController.showDirectories,
+  );
+  router.get(
+    '/admin/directories/:entity',
+    requireRole('admin'),
+    adminDirectoriesController.showDirectories,
+  );
+  router.post(
+    '/admin/directories/:entity',
+    requireRole('admin'),
+    adminDirectoriesController.createDirectory,
+  );
+  router.post(
+    '/admin/directories/:entity/:id/delete',
+    requireRole('admin'),
+    adminDirectoriesController.deleteDirectory,
+  );
+  router.post(
+    '/admin/directories/:entity/:id',
+    requireRole('admin'),
+    adminDirectoriesController.updateDirectory,
+  );
 
   return router;
 }

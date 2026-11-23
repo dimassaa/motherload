@@ -1333,6 +1333,76 @@ a.app-header__identity:hover {
   gap: var(--space-8);
 }
 
+/* --------------------------------------------------------- Reference data */
+
+/* Tabs are plain links: the active tab is part of the URL, so the page works
+   without client JavaScript and a bookmark returns to the same directory. */
+.tabs {
+  margin-bottom: var(--space-24);
+}
+
+.tabs__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  border-bottom: 1px solid var(--color-lichen);
+  list-style: none;
+}
+
+.tabs__link {
+  display: block;
+  padding: 10px var(--space-16);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  color: var(--color-deep-fern);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  letter-spacing: 0.12em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.tabs__link:hover {
+  background: rgb(255 255 255 / 55%);
+}
+
+.tabs__link[aria-current='page'] {
+  background: var(--color-bone-white);
+  box-shadow: inset 0 0 0 0.5px var(--color-lichen);
+  color: var(--color-forest-ink);
+}
+
+/* The table needs the full canvas: supplier rows carry nine columns. The form
+   sits below it as a readable single column instead of squeezing the table. */
+.directory-layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+  align-items: stretch;
+}
+
+.directory-layout .form-panel {
+  max-width: 760px;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+  align-items: flex-start;
+}
+
+.row-actions__delete {
+  display: inline-flex;
+}
+
+/* Deletion is destructive; the red label is repeated by the confirm dialog and
+   is never the only cue. */
+.row-actions__delete .btn {
+  color: var(--color-danger);
+}
+
 /* JSON details in the audit table: collapsed by default, readable when open. */
 .details-json summary {
   color: var(--color-deep-fern);
