@@ -3,10 +3,29 @@
   const fieldError = (name) => (fieldErrors && fieldErrors[name] ? fieldErrors[name] : null);
   const passwordError = (name) =>
     passwordErrors && passwordErrors[name] ? passwordErrors[name] : null;
-  const invalidAttrs = (name, errorId) =>
-    fieldError(name) ? `aria-invalid="true" aria-describedby="${errorId}"` : '';
-  const passwordInvalidAttrs = (name, errorId) =>
-    passwordError(name) ? `aria-invalid="true" aria-describedby="${errorId}"` : '';
+
+  // Build one aria-describedby value that lists the hint and the error. Two
+  // separate attributes would be invalid HTML and screen readers use only one.
+  const fieldAttrs = (name, { hintId = null, errorId }) => {
+    const hasError = Boolean(fieldError(name));
+    const describedBy = [hintId, hasError ? errorId : null].filter(Boolean).join(' ');
+    return [
+      hasError ? 'aria-invalid="true"' : null,
+      describedBy ? `aria-describedby="${describedBy}"` : null,
+    ]
+      .filter(Boolean)
+      .join(' ');
+  };
+  const passwordAttrs = (name, { hintId = null, errorId }) => {
+    const hasError = Boolean(passwordError(name));
+    const describedBy = [hintId, hasError ? errorId : null].filter(Boolean).join(' ');
+    return [
+      hasError ? 'aria-invalid="true"' : null,
+      describedBy ? `aria-describedby="${describedBy}"` : null,
+    ]
+      .filter(Boolean)
+      .join(' ');
+  };
 %>
 <section aria-labelledby="user-form-title">
   <div class="page-header">
@@ -37,7 +56,7 @@
             autocomplete="name"
             required
             value="<%= values.fullName %>"
-            <%- invalidAttrs('fullName', 'user-full-name-error') %>
+            <%- fieldAttrs('fullName', { errorId: 'user-full-name-error' }) %>
           >
           <% if (fieldError('fullName')) { %>
             <p class="form-field__error" id="user-full-name-error"><%= fieldError('fullName') %></p>
@@ -56,9 +75,14 @@
               autocomplete="off"
               required
               value="<%= values.email %>"
-              <%- invalidAttrs('email', 'user-email-error') %>
+              <%- fieldAttrs('email', {
+                hintId: 'user-email-hint',
+                errorId: 'user-email-error',
+              }) %>
             >
-            <p class="form-field__hint">Только адреса в домене .by, например sklad@motherload.by.</p>
+            <p class="form-field__hint" id="user-email-hint">
+              Только адреса в домене .by, например sklad@motherload.by.
+            </p>
             <% if (fieldError('email')) { %>
               <p class="form-field__error" id="user-email-error"><%= fieldError('email') %></p>
             <% } %>
@@ -83,7 +107,7 @@
             class="form-field__select"
             id="user-role"
             name="role"
-            <%- invalidAttrs('role', 'user-role-error') %>
+            <%- fieldAttrs('role', { errorId: 'user-role-error' }) %>
           >
             <option value="storekeeper" <%- values.role === 'storekeeper' ? 'selected' : '' %>>
               Кладовщик
@@ -111,8 +135,10 @@
             autocomplete="tel"
             placeholder="+375 (29) 123-45-67"
             value="<%= values.phone %>"
-            aria-describedby="user-phone-hint"
-            <%- invalidAttrs('phone', 'user-phone-error') %>
+            <%- fieldAttrs('phone', {
+              hintId: 'user-phone-hint',
+              errorId: 'user-phone-error',
+            }) %>
           >
           <p class="form-field__hint" id="user-phone-hint">
             Необязательно. Формат: +375 (29) 123-45-67.
@@ -132,8 +158,10 @@
               type="password"
               autocomplete="new-password"
               required
-              aria-describedby="user-password-hint"
-              <%- invalidAttrs('password', 'user-password-error') %>
+              <%- fieldAttrs('password', {
+                hintId: 'user-password-hint',
+                errorId: 'user-password-error',
+              }) %>
             >
             <p class="form-field__hint" id="user-password-hint">
               Не короче 10 символов, строчная и заглавная буквы, цифра. Пароль не показывается и не
@@ -200,8 +228,10 @@
               type="password"
               autocomplete="new-password"
               required
-              aria-describedby="user-new-password-hint"
-              <%- passwordInvalidAttrs('password', 'user-new-password-error') %>
+              <%- passwordAttrs('password', {
+                hintId: 'user-new-password-hint',
+                errorId: 'user-new-password-error',
+              }) %>
             >
             <p class="form-field__hint" id="user-new-password-hint">
               Не короче 10 символов, строчная и заглавная буквы, цифра.

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { query } from '../../src/db/pool.js';
+import * as usersService from '../../src/services/users.js';
 import { createTestApp } from '../helpers/app.js';
 import { setupTestDb, teardownTestDb, truncateAll } from '../helpers/db.js';
 import { createUserFactory } from '../helpers/factories.js';
@@ -18,6 +19,15 @@ test.beforeEach(async () => {
 });
 
 test.after(async () => {
+  // A forced-audit-failure test renames the table for the duration of one
+  // request. If that test aborted before its finally block, put the name back
+  // before the shared pool is closed so later runs are not poisoned.
+  const { rows } = await query(
+    "select to_regclass('public.audit_log') as present, to_regclass('public.audit_log_unavailable') as renamed",
+  );
+  if (!rows[0].present && rows[0].renamed) {
+    await query('alter table audit_log_unavailable rename to audit_log');
+  }
   await teardownTestDb();
 });
 
@@ -68,6 +78,11 @@ function createUserPayload(overrides = {}) {
   };
 }
 
+/** Minimal request shape for service-level calls that only need actor + audit data. */
+function requestAs(userId) {
+  return { user: { id: userId }, ip: '127.0.0.1', get: () => 'task-5-test' };
+}
+
 test('admin creates a user through the form and the action is audited without the password', async () => {
   const { agent, user: admin } = await signInAsAdmin();
   const token = await getCsrf(agent, '/admin/users');
@@ -95,6 +110,33 @@ test('admin creates a user through the form and the action is audited without th
   assert.doesNotMatch(JSON.stringify(entries[0].details), /Sklad!23456/);
 });
 
+test('a failed audit insert rolls the user mutation back', async () => {
+  const { agent } = await signInAsAdmin();
+  const token = await getCsrf(agent, '/admin/users');
+
+  // Renaming the table makes the audit insert fail after the user insert has
+  // already run inside the transaction. The transaction must undo both.
+  await query('alter table audit_log rename to audit_log_unavailable');
+
+  let res;
+  try {
+    res = await agent
+      .post('/admin/users')
+      .type('form')
+      .send({ ...createUserPayload({ email: 'rollback@test.by' }), _csrf: token });
+  } finally {
+    await query('alter table audit_log_unavailable rename to audit_log');
+  }
+
+  assert.equal(res.status, 500);
+  assert.equal(await findUserByEmail('rollback@test.by'), null);
+
+  const { rows } = await query(
+    "select count(*)::integer as count from audit_log where action = 'user.create'",
+  );
+  assert.equal(rows[0].count, 0);
+});
+
 test('weak password is rejected by the server-side policy and the form keeps the input', async () => {
   const { agent } = await signInAsAdmin();
   const token = await getCsrf(agent, '/admin/users');
@@ -102,12 +144,21 @@ test('weak password is rejected by the server-side policy and the form keeps the
   const res = await agent
     .post('/admin/users/new')
     .type('form')
-    .send({ ...createUserPayload({ password: 'weakpass' }), _csrf: token });
+    .send({
+      ...createUserPayload({ password: 'weakpass', phone: '12345' }),
+      _csrf: token,
+    });
 
   assert.equal(res.status, 400);
   assert.match(res.text, /не короче 10 символов/);
   assert.match(res.text, /sklad@test\.by/, 'the submitted email must survive the re-render');
   assert.equal(await findUserByEmail('sklad@test.by'), null);
+
+  // Hint and error share one aria-describedby; a second attribute would be
+  // invalid HTML and one of the two ids would be ignored.
+  assert.match(res.text, /aria-describedby="user-phone-hint user-phone-error"/);
+  assert.match(res.text, /aria-describedby="user-password-hint user-password-error"/);
+  assert.doesNotMatch(res.text, /aria-describedby="[^"]*"[^>]*aria-describedby=/);
 });
 
 test('duplicate email is refused with a readable message', async () => {
@@ -186,6 +237,70 @@ test('admin cannot demote the last active admin to another role', async () => {
   assert.equal(rows[0].role, 'admin');
 });
 
+test('two concurrent deactivations cannot leave zero active admins', async () => {
+  const first = await createUserFactory({
+    email: 'admin-one@test.by',
+    password: PASSWORD,
+    role: 'admin',
+  });
+  const second = await createUserFactory({
+    email: 'admin-two@test.by',
+    password: PASSWORD,
+    role: 'admin',
+  });
+
+  const results = await Promise.allSettled([
+    usersService.toggleActive(second.id, { req: requestAs(first.id) }),
+    usersService.toggleActive(first.id, { req: requestAs(second.id) }),
+  ]);
+
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  const rejected = results.find((result) => result.status === 'rejected');
+  assert.match(rejected.reason.message, /последнего администратора/i);
+
+  const { rows } = await query(
+    "select count(*)::integer as count from users where role = 'admin' and is_active",
+  );
+  assert.equal(rows[0].count, 1, 'at least one active admin must remain');
+});
+
+test('two concurrent demotions cannot leave zero active admins', async () => {
+  const first = await createUserFactory({
+    email: 'admin-one@test.by',
+    password: PASSWORD,
+    role: 'admin',
+    fullName: 'Первый Администратор',
+  });
+  const second = await createUserFactory({
+    email: 'admin-two@test.by',
+    password: PASSWORD,
+    role: 'admin',
+    fullName: 'Второй Администратор',
+  });
+
+  const results = await Promise.allSettled([
+    usersService.update(
+      second.id,
+      { fullName: second.full_name, role: 'analyst', phone: null },
+      { req: requestAs(first.id) },
+    ),
+    usersService.update(
+      first.id,
+      { fullName: first.full_name, role: 'analyst', phone: null },
+      { req: requestAs(second.id) },
+    ),
+  ]);
+
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  const rejected = results.find((result) => result.status === 'rejected');
+  assert.match(rejected.reason.message, /последнего администратора/i);
+
+  const { rows } = await query(
+    "select count(*)::integer as count from users where role = 'admin' and is_active",
+  );
+  assert.equal(rows[0].count, 1, 'at least one active admin must remain');
+});
+
 test('admin cannot deactivate their own account while another admin exists', async () => {
   const { agent, user } = await signInAsAdmin();
   await createUserFactory({ email: 'admin2@test.by', password: PASSWORD, role: 'admin' });
@@ -252,6 +367,36 @@ test('admin password reset invalidates every session of the target user', async 
   const entries = await findAudit('user.password_reset');
   assert.equal(entries.length, 1);
   assert.doesNotMatch(JSON.stringify(entries[0].details), new RegExp(NEW_PASSWORD));
+});
+
+test('admin resetting their own password keeps the current session', async () => {
+  const { agent, user } = await signInAsAdmin();
+  const second = createTestApp();
+  await loginAs(second.agent, 'admin@test.by', PASSWORD);
+
+  const token = await getCsrf(agent, '/admin/users');
+  const res = await agent
+    .post(`/admin/users/${user.id}/password`)
+    .type('form')
+    .send({ password: NEW_PASSWORD, _csrf: token });
+
+  assert.equal(res.status, 302);
+
+  const page = await agent.get(`/admin/users/${user.id}`);
+  assert.equal(page.status, 200);
+  assert.match(page.text, /Текущий сеанс сохранён/);
+
+  assert.equal((await agent.get('/admin/users')).status, 200, 'the acting session survives');
+
+  const other = await second.agent.get('/dashboard');
+  assert.equal(other.status, 302);
+  assert.equal(other.headers.location, '/');
+
+  const { rows } = await query(
+    "select count(*)::integer as count from sessions where sess->>'userId' = $1",
+    [String(user.id)],
+  );
+  assert.equal(rows[0].count, 1, 'only the acting session remains');
 });
 
 test('admin password reset enforces the password policy', async () => {
@@ -380,6 +525,8 @@ test('profile password change rejects a repeated password mismatch', async () =>
 
   assert.equal(res.status, 400);
   assert.match(res.text, /не совпадают/i);
+  assert.match(res.text, /aria-describedby="profile-repeat-password-error"/);
+  assert.doesNotMatch(res.text, /aria-describedby="[^"]*"[^>]*aria-describedby=/);
 });
 
 test('audit page renders filters, escapes JSON details and applies action, entity and date filters', async () => {
@@ -438,4 +585,10 @@ test('audit page paginates long histories', async () => {
   const secondPage = await agent.get('/admin/audit?action=user.update&page=2');
   assert.match(secondPage.text, /Страница 2 из 2/);
   assert.match(secondPage.text, /row-01/);
+
+  // A stale bookmark beyond the end shows the last page, not an empty table.
+  const clamped = await agent.get('/admin/audit?action=user.update&page=999');
+  assert.equal(clamped.status, 200);
+  assert.match(clamped.text, /Страница 2 из 2/);
+  assert.match(clamped.text, /row-01/);
 });

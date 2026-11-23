@@ -1,3 +1,4 @@
+import { pool } from '../db/pool.js';
 import {
   countAuditEntries,
   insertAuditEntry,
@@ -16,6 +17,11 @@ const PAGE_SIZE = 25;
  * Callers must pass only non-secret context: passwords, password hashes and
  * CSRF tokens are never written to `details`, because the audit page is visible
  * to administrators and the rows outlive the session.
+ *
+ * Inside a mutation, pass the `client` from `withTransaction`. The audit row then
+ * shares the transaction and an insert failure rolls the mutation back instead
+ * of leaving a committed change without its audit trail. Omitting `client` uses
+ * the pool, which keeps the Task 4 authentication calls working.
  * @param {{
  *   userId?: number | null,
  *   action: string,
@@ -24,25 +30,33 @@ const PAGE_SIZE = 25;
  *   details?: Record<string, unknown>,
  *   req?: import('express').Request,
  * }} entry
+ * @param {{ client?: import('pg').PoolClient | null }} [options]
  */
-export async function record({ userId, action, entityType, entityId, details, req }) {
-  await insertAuditEntry({
-    userId: userId ?? req?.user?.id ?? null,
-    action,
-    entityType: entityType ?? null,
-    entityId: entityId === null || entityId === undefined ? null : String(entityId),
-    details: details ?? {},
-    ip: req?.ip ?? null,
-    userAgent: req?.get?.('user-agent') ?? null,
-  });
+export async function record(
+  { userId, action, entityType, entityId, details, req },
+  { client } = {},
+) {
+  await insertAuditEntry(
+    {
+      userId: userId ?? req?.user?.id ?? null,
+      action,
+      entityType: entityType ?? null,
+      entityId: entityId === null || entityId === undefined ? null : String(entityId),
+      details: details ?? {},
+      ip: req?.ip ?? null,
+      userAgent: req?.get?.('user-agent') ?? null,
+    },
+    client ?? pool,
+  );
 }
 
 /**
  * Read the audit page for the administration screen.
  *
- * `page` is clamped to at least 1; an out-of-range page factor of the URL must
- * not produce a negative OFFSET. Filters arrive already validated and trimmed by
- * the controller, so this function only maps them to the repository contract.
+ * The page is clamped into `[1, totalPages]`. A stale bookmark like `?page=999`
+ * must show the last page, not an empty table that looks like "no records".
+ * Filters arrive already validated and trimmed by the controller, so this
+ * function only maps them to the repository contract.
  * @param {{
  *   userId?: number | null,
  *   action?: string | null,
@@ -60,19 +74,26 @@ export async function list({
   to = null,
   page = 1,
 } = {}) {
-  const currentPage = Number.isInteger(page) && page > 0 ? page : 1;
+  const requestedPage = Number.isInteger(page) && page > 0 ? page : 1;
   const query = { userId, action, entityType, from, to };
 
-  const [entries, total] = await Promise.all([
-    listAuditEntries({ ...query, limit: PAGE_SIZE, offset: (currentPage - 1) * PAGE_SIZE }),
-    countAuditEntries(query),
-  ]);
+  // The count comes first because the requested page may need clamping before
+  // its offset is safe to compute.
+  const total = await countAuditEntries(query);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const currentPage = Math.min(requestedPage, totalPages);
+
+  const entries = await listAuditEntries({
+    ...query,
+    limit: PAGE_SIZE,
+    offset: (currentPage - 1) * PAGE_SIZE,
+  });
 
   return {
     entries,
     page: currentPage,
     total,
-    totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)),
+    totalPages,
     pageSize: PAGE_SIZE,
   };
 }

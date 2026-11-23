@@ -4,18 +4,6 @@
 
 ## 2026-11-23, Task 5 — RBAC, users, profile, audit
 
-- The “at least one active admin” guard reads `countActiveAdmins()` and then
-  updates in a separate statement. Two administrators deactivating or demoting
-  each other at the same instant could both pass the check and lock the screen.
-  The window is milliseconds wide and requires two cooperating admins, so the
-  fix (a transaction with `FOR UPDATE` on the admin rows) is deferred rather
-  than silently widening this task.
-- Mutations write the audit row after the data change, without a shared
-  transaction. A failure between the two leaves the change unaudited; stock
-  documents already use transactions for this reason. Admin actions are
-  low-frequency and the failure needs a database error at the wrong moment, so
-  the transaction wrapper is left for the stage that introduces a shared
-  mutation helper.
 - `GET /login` returns 404: only `POST /login` is routed. A user who types the
   address or follows an old bookmark sees the not-found page. Task 4 owns the
   auth routes; a redirect to `/` would be the natural fix.

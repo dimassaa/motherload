@@ -1,8 +1,13 @@
-import { query } from '../db/pool.js';
+import { pool, query } from '../db/pool.js';
 
 /**
  * Append one audit record. The repository deliberately accepts raw columns:
  * the service layer decides which request metadata is safe to persist.
+ *
+ * The second argument is the transaction client. Task 5 user/profile mutations
+ * and Task 11 stock documents call this with their transaction client so the
+ * mutation and its audit row commit or roll back together. The pool remains the
+ * default, which keeps the Task 4 authentication calls unchanged.
  * @param {{
  *   userId?: number | null,
  *   action: string,
@@ -12,17 +17,21 @@ import { query } from '../db/pool.js';
  *   ip?: string | null,
  *   userAgent?: string | null,
  * }} entry
+ * @param {import('pg').PoolClient | import('pg').Pool} [client]
  */
-export async function insertAuditEntry({
-  userId = null,
-  action,
-  entityType = null,
-  entityId = null,
-  details = {},
-  ip = null,
-  userAgent = null,
-}) {
-  await query(
+export async function insertAuditEntry(
+  {
+    userId = null,
+    action,
+    entityType = null,
+    entityId = null,
+    details = {},
+    ip = null,
+    userAgent = null,
+  },
+  client = pool,
+) {
+  await client.query(
     `insert into audit_log (user_id, action, entity_type, entity_id, details, ip, user_agent)
      values ($1, $2, $3, $4, $5, $6, $7)`,
     [userId, action, entityType, entityId, JSON.stringify(details), ip, userAgent],

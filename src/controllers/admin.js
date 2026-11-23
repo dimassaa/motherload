@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { NotFoundError, ValidationError } from '../domain/errors.js';
-import { fieldErrorsFromZod, messagesFromZod } from '../middleware/validate.js';
+import { fieldErrorsFromZod, messagesFromZod, parseOrThrow } from '../middleware/validate.js';
 import * as auditService from '../services/audit.js';
 import * as usersService from '../services/users.js';
 import { createUserSchema, resetPasswordSchema, updateUserSchema } from '../validation/users.js';
@@ -221,8 +221,17 @@ export async function resetPassword(req, res, next) {
       return;
     }
 
-    await usersService.adminResetPassword(id, parsed.data.password, { req });
-    req.flash('success', 'Пароль обновлён. Все сеансы пользователя завершены.');
+    const { keepsCurrentSession } = await usersService.adminResetPassword(
+      id,
+      parsed.data.password,
+      { req, sessionId: req.sessionID ?? null },
+    );
+    req.flash(
+      'success',
+      keepsCurrentSession
+        ? 'Пароль изменён. Текущий сеанс сохранён, остальные завершены.'
+        : 'Пароль обновлён. Все сеансы пользователя завершены.',
+    );
     res.redirect(`${USERS_PATH}/${id}`);
   } catch (error) {
     next(error);
@@ -248,7 +257,7 @@ export async function toggleUser(req, res, next) {
 /** `GET /admin/audit` — filtered, paginated security log. */
 export async function showAudit(req, res, next) {
   try {
-    const filters = auditQuerySchema.parse(req.query ?? {});
+    const filters = parseOrThrow(auditQuerySchema, req.query ?? {});
     const [result, options] = await Promise.all([
       auditService.list(filters),
       auditService.filterOptions(),

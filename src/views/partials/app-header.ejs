@@ -9,10 +9,10 @@
     <%- include('./nav') %>
 
     <div class="app-header__user">
-      <p class="app-header__identity">
+      <a class="app-header__identity" href="/profile">
         <span class="app-header__name"><%= displayName %></span>
         <span class="app-header__role tag tag--plain"><%= displayRole %></span>
-      </p>
+      </a>
       <form class="app-header__logout" method="post" action="/logout">
         <%- csrfField() %>
         <button class="btn btn--ghost btn--sm" type="submit">Выйти</button>
@@ -32,10 +32,13 @@
             navLinkClass: 'app-nav__burger-link',
           }) %>
         </nav>
-        <form class="app-nav__burger-logout" method="post" action="/logout">
-          <%- csrfField() %>
-          <button class="btn btn--outline btn--sm" type="submit">Выйти</button>
-        </form>
+        <div class="app-nav__burger-account">
+          <a class="btn btn--ghost btn--sm" href="/profile">Профиль</a>
+          <form class="app-nav__burger-logout" method="post" action="/logout">
+            <%- csrfField() %>
+            <button class="btn btn--outline btn--sm" type="submit">Выйти</button>
+          </form>
+        </div>
       </div>
     </details>
   </div>

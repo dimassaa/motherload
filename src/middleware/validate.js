@@ -48,8 +48,10 @@ export function parseOrThrow(schema, input) {
  * parsed value applies the schema's trimming and normalisation once, so the
  * handler never re-implements it.
  *
- * A failure becomes the shared 400 response: this middleware is for routes
- * without a repopulatable form. Form routes parse explicitly and re-render.
+ * NOTE: no route uses this middleware yet. The SSR controllers must re-render
+ * the submitted form with per-field errors, so they parse explicitly and render
+ * themselves. This is the generic variant reserved for the Task 12 JSON API,
+ * where a failed body maps to the shared 400 response instead of a form.
  * @param {import('zod').ZodType} schema
  * @returns {import('express').RequestHandler}
  */

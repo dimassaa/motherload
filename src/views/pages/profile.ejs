@@ -2,10 +2,29 @@
   const fieldError = (name) => (fieldErrors && fieldErrors[name] ? fieldErrors[name] : null);
   const passwordError = (name) =>
     passwordErrors && passwordErrors[name] ? passwordErrors[name] : null;
-  const invalidAttrs = (name, errorId) =>
-    fieldError(name) ? `aria-invalid="true" aria-describedby="${errorId}"` : '';
-  const passwordInvalidAttrs = (name, errorId) =>
-    passwordError(name) ? `aria-invalid="true" aria-describedby="${errorId}"` : '';
+
+  // One aria-describedby listing both hint and error; two attributes would be
+  // invalid HTML and assistive technology would read only one of them.
+  const fieldAttrs = (name, { hintId = null, errorId }) => {
+    const hasError = Boolean(fieldError(name));
+    const describedBy = [hintId, hasError ? errorId : null].filter(Boolean).join(' ');
+    return [
+      hasError ? 'aria-invalid="true"' : null,
+      describedBy ? `aria-describedby="${describedBy}"` : null,
+    ]
+      .filter(Boolean)
+      .join(' ');
+  };
+  const passwordAttrs = (name, { hintId = null, errorId }) => {
+    const hasError = Boolean(passwordError(name));
+    const describedBy = [hintId, hasError ? errorId : null].filter(Boolean).join(' ');
+    return [
+      hasError ? 'aria-invalid="true"' : null,
+      describedBy ? `aria-describedby="${describedBy}"` : null,
+    ]
+      .filter(Boolean)
+      .join(' ');
+  };
 %>
 <section aria-labelledby="profile-title">
   <div class="page-header">
@@ -47,7 +66,7 @@
             autocomplete="name"
             required
             value="<%= values.fullName %>"
-            <%- invalidAttrs('fullName', 'profile-full-name-error') %>
+            <%- fieldAttrs('fullName', { errorId: 'profile-full-name-error' }) %>
           >
           <% if (fieldError('fullName')) { %>
             <p class="form-field__error" id="profile-full-name-error">
@@ -67,8 +86,10 @@
             autocomplete="tel"
             placeholder="+375 (29) 123-45-67"
             value="<%= values.phone %>"
-            aria-describedby="profile-phone-hint"
-            <%- invalidAttrs('phone', 'profile-phone-error') %>
+            <%- fieldAttrs('phone', {
+              hintId: 'profile-phone-hint',
+              errorId: 'profile-phone-error',
+            }) %>
           >
           <p class="form-field__hint" id="profile-phone-hint">
             Необязательно. Формат: +375 (29) 123-45-67.
@@ -104,7 +125,9 @@
             type="password"
             autocomplete="current-password"
             required
-            <%- passwordInvalidAttrs('currentPassword', 'profile-current-password-error') %>
+            <%- passwordAttrs('currentPassword', {
+              errorId: 'profile-current-password-error',
+            }) %>
           >
           <% if (passwordError('currentPassword')) { %>
             <p class="form-field__error" id="profile-current-password-error">
@@ -122,8 +145,10 @@
             type="password"
             autocomplete="new-password"
             required
-            aria-describedby="profile-new-password-hint"
-            <%- passwordInvalidAttrs('newPassword', 'profile-new-password-error') %>
+            <%- passwordAttrs('newPassword', {
+              hintId: 'profile-new-password-hint',
+              errorId: 'profile-new-password-error',
+            }) %>
           >
           <p class="form-field__hint" id="profile-new-password-hint">
             Не короче 10 символов, строчная и заглавная буквы, цифра.
@@ -144,7 +169,9 @@
             type="password"
             autocomplete="new-password"
             required
-            <%- passwordInvalidAttrs('repeatPassword', 'profile-repeat-password-error') %>
+            <%- passwordAttrs('repeatPassword', {
+              errorId: 'profile-repeat-password-error',
+            }) %>
           >
           <% if (passwordError('repeatPassword')) { %>
             <p class="form-field__error" id="profile-repeat-password-error">
