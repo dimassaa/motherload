@@ -1,4 +1,5 @@
 import { ACTIVITY_WINDOW_DAYS } from '../config/inventory.js';
+import { pool } from '../db/pool.js';
 
 /**
  * Find the inventory count currently freezing a warehouse.
@@ -314,4 +315,106 @@ export async function markCancelled(client, countId) {
   );
 
   return rows.length > 0;
+}
+
+// ------------------------------------------------------------ Read models for UI
+
+// The list is the operator's working set, not a historical archive. 200 rows
+// keep the page cheap; older counts remain reachable by direct link. The UI
+// labels a capped page as "last 200" so it never claims to show a total.
+export const COUNT_LIST_LIMIT = 200;
+
+const COUNT_COLUMNS = `
+  ic.id, ic.warehouse_id, ic.status, ic.created_at, ic.submitted_at,
+  ic.approved_at, ic.comment,
+  w.name as warehouse_name, w.city as warehouse_city,
+  starter.full_name as started_by_name,
+  approver.full_name as approved_by_name,
+  (select count(*)::integer from inventory_lines l where l.count_id = ic.id) as line_count,
+  (select count(*)::integer from inventory_lines l
+    where l.count_id = ic.id and l.actual_qty is not null) as entered_count,
+  (select count(*)::integer from inventory_lines l
+    where l.count_id = ic.id and l.difference is not null and l.difference <> 0)
+    as discrepancy_count
+`;
+
+const COUNT_JOINS = `
+  join warehouses w on w.id = ic.warehouse_id
+  left join users starter on starter.id = ic.started_by
+  left join users approver on approver.id = ic.approved_by
+`;
+
+function mapCount(row) {
+  return {
+    id: row.id,
+    warehouseId: row.warehouse_id,
+    warehouseName: row.warehouse_name,
+    warehouseCity: row.warehouse_city,
+    status: row.status,
+    createdAt: row.created_at,
+    submittedAt: row.submitted_at,
+    approvedAt: row.approved_at,
+    comment: row.comment,
+    startedByName: row.started_by_name,
+    approvedByName: row.approved_by_name,
+    lineCount: row.line_count,
+    enteredCount: row.entered_count,
+    discrepancyCount: row.discrepancy_count,
+  };
+}
+
+/**
+ * Every count visible on `/inventory`, newest first, with the aggregates the
+ * list renders. The query runs on the pool: it is a read model and must not
+ * block a posting transaction.
+ * @returns {Promise<Array<ReturnType<typeof mapCount>>>}
+ */
+export async function listCountViews() {
+  const { rows } = await pool.query(
+    `select ${COUNT_COLUMNS}
+     from inventory_counts ic
+     ${COUNT_JOINS}
+     order by ic.created_at desc, ic.id desc
+     limit $1`,
+    [COUNT_LIST_LIMIT],
+  );
+
+  return rows.map(mapCount);
+}
+
+/**
+ * One count with warehouse, actors and line aggregates for the detail screen.
+ * @param {number} countId
+ * @returns {Promise<ReturnType<typeof mapCount> | null>}
+ */
+export async function findCountView(countId) {
+  const { rows } = await pool.query(
+    `select ${COUNT_COLUMNS}
+     from inventory_counts ic
+     ${COUNT_JOINS}
+     where ic.id = $1`,
+    [countId],
+  );
+
+  return rows[0] ? mapCount(rows[0]) : null;
+}
+
+/**
+ * Lines for the detail screen. Kept separate from {@link listLines} because the
+ * latter runs inside the caller's transaction, while the page renders from the
+ * pool outside any lock.
+ * @param {number} countId
+ * @returns {Promise<Array<ReturnType<typeof mapLine>>>}
+ */
+export async function listLinesView(countId) {
+  const { rows } = await pool.query(
+    `select ${LINE_COLUMNS}
+     from inventory_lines l
+     join components c on c.id = l.component_id
+     where l.count_id = $1
+     order by c.sku`,
+    [countId],
+  );
+
+  return rows.map(mapLine);
 }

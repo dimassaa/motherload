@@ -1,0 +1,65 @@
+<section aria-labelledby="inventory-title">
+  <div class="page-header">
+    <h1 id="inventory-title" class="page-header__title">Инвентаризация</h1>
+    <a class="btn btn--primary" href="/inventory/new">Начать инвентаризацию</a>
+  </div>
+
+  <p class="page-header__meta">
+    <% if (capped) { %>
+      Последние <%= counts.length %> инвентаризаций
+    <% } else { %>
+      Всего инвентаризаций: <%= counts.length %>
+    <% } %>
+  </p>
+
+  <% if (counts.length === 0) { %>
+    <%- include('../../partials/empty-state', {
+      title: 'Инвентаризаций пока нет',
+      text: 'Начните первую инвентаризацию: система зафиксирует учётные остатки склада и заморозит его до утверждения или отмены.',
+      actionHref: '/inventory/new',
+      actionLabel: 'Начать инвентаризацию',
+    }) %>
+  <% } else { %>
+    <div class="table-wrap">
+      <table class="table">
+        <thead class="table__head">
+          <tr>
+            <th class="table__heading" scope="col">Номер</th>
+            <th class="table__heading" scope="col">Склад</th>
+            <th class="table__heading" scope="col">Статус</th>
+            <th class="table__heading" scope="col">Начата</th>
+            <th class="table__heading" scope="col">Автор</th>
+            <th class="table__heading" scope="col">Утверждена</th>
+            <th class="table__heading" scope="col">Утвердил</th>
+            <th class="table__heading table__cell--num" scope="col">Расхождения</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% for (const item of counts) { %>
+            <tr class="table__row">
+              <td class="table__cell table__cell--code">
+                <a href="/inventory/<%= item.id %>"><%= item.number %></a>
+              </td>
+              <td class="table__cell">
+                <%= item.warehouseName %>
+                <span class="table__cell--muted">· <%= item.warehouseCity %></span>
+              </td>
+              <td class="table__cell">
+                <%- include('../../partials/status-chip', { status: item.status }) %>
+              </td>
+              <td class="table__cell"><%= formatDateTime(item.createdAt) %></td>
+              <td class="table__cell"><%= item.startedByName ?? '—' %></td>
+              <td class="table__cell">
+                <%= item.approvedAt ? formatDateTime(item.approvedAt) : '—' %>
+              </td>
+              <td class="table__cell"><%= item.approvedByName ?? '—' %></td>
+              <td class="table__cell table__cell--num inventory-list__discrepancies">
+                <%= formatQty(item.discrepancyCount) %>
+              </td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</section>

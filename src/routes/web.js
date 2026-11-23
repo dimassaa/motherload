@@ -4,6 +4,7 @@ import * as adminComponentsController from '../controllers/admin-components.js';
 import * as adminDirectoriesController from '../controllers/admin-directories.js';
 import * as authController from '../controllers/auth.js';
 import * as componentsController from '../controllers/components.js';
+import * as inventoryController from '../controllers/inventory.js';
 import * as profileController from '../controllers/profile.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { csrfProtection } from '../middleware/csrf.js';
@@ -39,6 +40,30 @@ export function createWebRouter({ loginLimiter }) {
   // admin routes so the read model cannot be used to mutate a position.
   router.get('/components', requireAuth, componentsController.showList);
   router.get('/components/:id', requireAuth, componentsController.showCard);
+
+  // Inventory is a storekeeper/admin workflow; approval is a separate admin
+  // right, so the approve route narrows the role instead of relying on the
+  // hidden button. `/new` is registered before `/:id` to keep it literal.
+  router.get('/inventory', requireRole('admin', 'storekeeper'), inventoryController.showList);
+  router.get('/inventory/new', requireRole('admin', 'storekeeper'), inventoryController.showNew);
+  router.post('/inventory', requireRole('admin', 'storekeeper'), inventoryController.createCount);
+  router.get('/inventory/:id', requireRole('admin', 'storekeeper'), inventoryController.showCount);
+  router.post(
+    '/inventory/:id/lines',
+    requireRole('admin', 'storekeeper'),
+    inventoryController.saveLines,
+  );
+  router.post(
+    '/inventory/:id/submit',
+    requireRole('admin', 'storekeeper'),
+    inventoryController.submitCount,
+  );
+  router.post('/inventory/:id/approve', requireRole('admin'), inventoryController.approveCount);
+  router.post(
+    '/inventory/:id/cancel',
+    requireRole('admin', 'storekeeper'),
+    inventoryController.cancelCount,
+  );
 
   router.get('/profile', requireAuth, profileController.showProfile);
   router.post('/profile', requireAuth, profileController.updateProfile);

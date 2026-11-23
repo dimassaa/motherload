@@ -163,6 +163,86 @@ async function assertDraft(client, count) {
 }
 
 /**
+ * Counts for the `/inventory` list.
+ * @returns {Promise<{
+ *   counts: Array<{
+ *     id: number,
+ *     warehouseId: number,
+ *     warehouseName: string,
+ *     warehouseCity: string,
+ *     status: 'draft' | 'submitted' | 'approved' | 'cancelled',
+ *     createdAt: Date,
+ *     submittedAt: Date | null,
+ *     approvedAt: Date | null,
+ *     comment: string | null,
+ *     startedByName: string | null,
+ *     approvedByName: string | null,
+ *     lineCount: number,
+ *     enteredCount: number,
+ *     discrepancyCount: number,
+ *   }>,
+ *   capped: boolean,
+ * }>} `capped` means older counts exist outside the list window
+ */
+export async function listCounts() {
+  const counts = await inventory.listCountViews();
+  return { counts, capped: counts.length === inventory.COUNT_LIST_LIMIT };
+}
+
+/**
+ * Read model for `/inventory/:id`.
+ *
+ * The discrepancy list and the quantity summary are derived here rather than in
+ * the template: the act must print the same numbers the operator sees, and a
+ * view-local sum would drift from the stored differences.
+ *
+ * @param {number} countId
+ * @returns {Promise<{
+ *   count: Awaited<ReturnType<typeof inventory.findCountView>>,
+ *   lines: Array<Awaited<ReturnType<typeof inventory.listLinesView>>[number]>,
+ *   discrepancies: Array<{ difference: number }>,
+ *   summary: {
+ *     lineCount: number,
+ *     enteredCount: number,
+ *     discrepancyCount: number,
+ *     unfilledCount: number,
+ *     surplusLines: number,
+ *     shortageLines: number,
+ *     surplusQty: number,
+ *     shortageQty: number,
+ *     netQty: number,
+ *   },
+ * }>}
+ * @throws {NotFoundError} when the count does not exist
+ */
+export async function getCountDetail(countId) {
+  const id = readCountId(countId);
+  const [count, lines] = await Promise.all([
+    inventory.findCountView(id),
+    inventory.listLinesView(id),
+  ]);
+  if (!count) throw new NotFoundError('Инвентаризация не найдена.');
+
+  const discrepancies = lines.filter((line) => line.difference !== null && line.difference !== 0);
+  const surplus = discrepancies.filter((line) => line.difference > 0);
+  const shortage = discrepancies.filter((line) => line.difference < 0);
+
+  const summary = {
+    lineCount: lines.length,
+    enteredCount: lines.filter((line) => line.actualQty !== null).length,
+    discrepancyCount: discrepancies.length,
+    unfilledCount: lines.filter((line) => line.actualQty === null).length,
+    surplusLines: surplus.length,
+    shortageLines: shortage.length,
+    surplusQty: surplus.reduce((total, line) => total + line.difference, 0),
+    shortageQty: shortage.reduce((total, line) => total - line.difference, 0),
+    netQty: discrepancies.reduce((total, line) => total + line.difference, 0),
+  };
+
+  return { count, lines, discrepancies, summary };
+}
+
+/**
  * Start an inventory count and freeze the warehouse in one transaction.
  *
  * The warehouse row lock is the same one stock postings take, so a receipt can
@@ -609,6 +689,11 @@ async function applyDecrease(client, line, warehouseId) {
  * Approval is terminal; cancellation is not allowed after it because the
  * adjustments are already reflected in the ledger.
  *
+ * Separation of duties applies to cancellation too: a storekeeper may abandon
+ * their own draft, but a count already submitted is an administrator's review
+ * and only an administrator may end it. The role is read from the database
+ * inside the transaction, not trusted from the caller's session object.
+ *
  * @param {{
  *   countId: number,
  *   user?: { id?: number, role?: string } | null,
@@ -616,6 +701,8 @@ async function applyDecrease(client, line, warehouseId) {
  *   req?: import('express').Request,
  * }} input
  * @returns {Promise<{ countId: number, status: 'cancelled' }>}
+ * @throws {ForbiddenError} when the actor is not an administrator or storekeeper,
+ *   or a storekeeper tries to cancel a submitted count
  * @throws {NotFoundError} when the count does not exist
  * @throws {ConflictError} when the count is already approved or cancelled
  */
@@ -624,6 +711,14 @@ export async function cancelCount({ countId, user = null, userId = null, req }) 
   const actor = resolveActor({ user, userId });
 
   return withTransaction(async (client) => {
+    // Same source of truth as approval: a stale session or a direct script call
+    // must not grant a role the database does not hold.
+    const actorRow = actor.id === null ? null : await users.findById(actor.id, { client });
+    const role = actorRow?.role;
+    if (role !== 'admin' && role !== 'storekeeper') {
+      throw new ForbiddenError('Отменять инвентаризацию может администратор или кладовщик.');
+    }
+
     const count = await inventory.findCountById(client, id);
     if (!count) throw new NotFoundError('Инвентаризация не найдена.');
 
@@ -638,6 +733,9 @@ export async function cancelCount({ countId, user = null, userId = null, req }) 
 
     if (locked.status !== 'draft' && locked.status !== 'submitted') {
       throw new ConflictError('Завершённую инвентаризацию нельзя отменить.');
+    }
+    if (locked.status === 'submitted' && role !== 'admin') {
+      throw new ForbiddenError('Отменить отправленную инвентаризацию может только администратор.');
     }
 
     const cancelled = await inventory.markCancelled(client, id);

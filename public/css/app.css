@@ -1607,6 +1607,175 @@ a.app-header__identity:hover {
   color: var(--color-danger);
 }
 
+/* ------------------------------------------------------- Inventory counting */
+
+/* A warning notice is deliberately not a flash: it stays on the page while the
+   warehouse is frozen, so colour is backed by a bold sentence and a border. */
+.notice {
+  margin-top: var(--space-16);
+  padding: var(--space-16);
+  border-left: 3px solid var(--color-warning);
+  border-radius: var(--radius-card);
+  background: var(--color-bone-white);
+  box-shadow: var(--shadow-hairline);
+}
+
+.notice--warning {
+  border-left-color: var(--color-warning);
+}
+
+.notice strong {
+  font-weight: 600;
+}
+
+.inventory-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.inventory-meta {
+  padding: var(--space-20);
+  border-radius: var(--radius-card);
+  background: var(--color-bone-white);
+  box-shadow: var(--shadow-hairline);
+}
+
+.inventory-comment {
+  padding: var(--space-12) var(--space-16);
+  border-radius: var(--radius-card);
+  background: var(--color-bone-white);
+  box-shadow: var(--shadow-hairline);
+}
+
+.inventory-empty {
+  color: var(--color-text-muted);
+}
+
+.inventory-entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.inventory-table__actual {
+  width: 140px;
+}
+
+.inventory-table__comment {
+  min-width: 220px;
+}
+
+.inventory-table__input {
+  min-height: 34px;
+  padding: 6px var(--space-8);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.inventory-diff {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The sign also carries the direction; colour is a secondary cue. */
+.inventory-diff--surplus {
+  color: var(--color-pine);
+}
+
+.inventory-diff--shortage {
+  color: var(--color-danger);
+}
+
+.inventory-diff--none {
+  color: var(--color-text-muted);
+}
+
+.inventory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+  align-items: center;
+  padding-top: var(--space-8);
+}
+
+.inventory-actions form {
+  display: inline-flex;
+}
+
+.inventory-danger {
+  color: var(--color-danger);
+}
+
+.inventory-act {
+  margin-top: var(--space-24);
+  padding: var(--space-24);
+  border-radius: var(--radius-panel);
+  background: var(--color-bone-white);
+  box-shadow: var(--shadow-hairline);
+}
+
+.inventory-act__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-8);
+  margin-bottom: var(--space-12);
+}
+
+.inventory-act__meta,
+.inventory-act__summary {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  letter-spacing: 0.04em;
+}
+
+.inventory-act__summary {
+  margin-bottom: var(--space-12);
+}
+
+.inventory-act__warning {
+  margin-bottom: var(--space-12);
+  padding: var(--space-8) var(--space-12);
+  border-left: 3px solid var(--color-warning);
+  color: var(--color-warning-ink);
+  font-size: 13px;
+}
+
+.inventory-act__empty {
+  padding: var(--space-16) 0;
+}
+
+.inventory-act__signatures {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-24);
+  margin-top: var(--space-32);
+}
+
+.inventory-act__signature {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.inventory-act__signature-label {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.inventory-act__signature-line {
+  padding-top: var(--space-8);
+  border-top: 1px solid var(--color-forest-ink);
+  font-size: var(--text-body);
+}
+
 /* -------------------------------------------------------------- Responsive */
 
 @media (max-width: 1279px) {
@@ -1704,6 +1873,15 @@ a.app-header__identity:hover {
     font-size: 13px;
   }
 
+  .inventory-act {
+    padding: var(--space-16);
+  }
+
+  .inventory-act__signatures {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-16);
+  }
+
   .site-footer__inner {
     flex-direction: column;
     align-items: flex-start;
@@ -1757,6 +1935,31 @@ a.app-header__identity:hover {
   a:visited {
     color: #000000;
     text-decoration: none;
+  }
+}
+
+@media print {
+  /* The inventory screen is a working sheet; the printed document is the act.
+     Everything outside the act is removed so field operators can sign the paper. */
+  .inventory-detail-page .inventory-screen-only {
+    display: none !important;
+  }
+
+  .inventory-detail-page .inventory-act {
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .inventory-detail-page .inventory-act__meta,
+  .inventory-detail-page .inventory-act__summary {
+    color: #000000;
+  }
+
+  .inventory-detail-page .inventory-act__signature-line {
+    border-top-color: #000000;
   }
 }
 

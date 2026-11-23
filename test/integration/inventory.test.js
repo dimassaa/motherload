@@ -628,7 +628,7 @@ test('an approved count is terminal: no second approval, edit, submit or cancel'
   assert.equal((await countAudit('inventory.approve')).length, 1);
 });
 
-test('cancel releases the warehouse freeze for a draft or submitted count', async () => {
+test('cancel is a draft action for storekeepers and an admin action after submit', async () => {
   const ctx = await seedInventory();
   await receive(ctx, 5);
   const { countId } = await create(ctx);
@@ -641,16 +641,33 @@ test('cancel releases the warehouse freeze for a draft or submitted count', asyn
 
   await assert.rejects(() => receive(ctx, 1), expectStatus(409));
 
-  await cancelCount({ countId, userId: ctx.userId });
+  // Submitted means the count is under administrative review. A storekeeper
+  // cannot unilaterally end it, and a claimed role does not override the row.
+  await assert.rejects(() => cancelCount({ countId, userId: ctx.userId }), expectStatus(403));
+  await assert.rejects(
+    () => cancelCount({ countId, user: { id: ctx.userId, role: 'admin' } }),
+    expectStatus(403),
+  );
+  await assert.rejects(() => cancelCount({ countId }), expectStatus(403));
+  assert.equal(await countStatus(countId), 'submitted');
+
+  await cancelCount({ countId, userId: ctx.admin.id });
 
   assert.equal(await countStatus(countId), 'cancelled');
   const audit = await countAudit('inventory.cancel');
   assert.equal(audit.length, 1);
   assert.equal(audit[0].entity_id, String(countId));
+  assert.equal(audit[0].user_id, ctx.admin.id);
 
   // The freeze is gone: stock moves again and a fresh count can be opened.
   await receive(ctx, 1);
   assert.equal(await balance(ctx.componentId, ctx.warehouseId), 6);
   const second = await create(ctx);
-  assert.notEqual(second.countId, countId);
+
+  // A storekeeper may still abandon their own draft.
+  await cancelCount({ countId: second.countId, userId: ctx.userId });
+  assert.equal(await countStatus(second.countId), 'cancelled');
+  const afterDraft = await countAudit('inventory.cancel');
+  assert.equal(afterDraft.length, 2);
+  assert.equal(afterDraft[1].user_id, ctx.userId);
 });
