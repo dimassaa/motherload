@@ -18,6 +18,7 @@ import { errorHandler, notFoundHandler } from './middleware/errors.js';
 import { attachFlash } from './middleware/flash.js';
 import { attachLocals } from './middleware/locals.js';
 import { createRateLimiters } from './middleware/rate-limit.js';
+import { createApiRouter } from './routes/api.js';
 import { createWebRouter } from './routes/web.js';
 
 const publicDir = fileURLToPath(new URL('../public', import.meta.url));
@@ -79,7 +80,6 @@ export function createApp() {
 
   // extended: true parses nested document line arrays (lines[0][componentId]).
   app.use(express.urlencoded({ extended: true }));
-  app.use('/api', express.json());
 
   app.use(express.static(publicDir, staticOptions));
   app.use('/vendor', express.static(`${publicDir}/vendor`, staticOptions));
@@ -117,6 +117,7 @@ export function createApp() {
   app.use(attachFlash);
   app.use(attachLocals);
 
+  app.use('/api', createApiRouter());
   app.use(createWebRouter({ loginLimiter }));
 
   app.use(notFoundHandler);

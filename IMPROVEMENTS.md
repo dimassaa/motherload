@@ -2,6 +2,17 @@
 
 Пока пусто. Некритичные находки добавляются сюда по мере работы.
 
+## 2026-11-23, Task 12 — FIFO preview is advisory for repeated lines and frozen warehouses
+
+`previewIssue` allocates each requested line against the current batch snapshot
+independently. If the form sends the same component twice, the preview shows each
+row as if it were the only one, so the total can look available while `postIssue`
+would reject the second row. The preview also skips the inventory-freeze check
+that returns 409 on posting, because showing the cost split is still useful on a
+frozen warehouse. Both are acceptable for an advisory preview; Task 14 (issue
+form) decides whether to merge repeated rows client-side and whether to disable
+the preview during a count.
+
 ## 2026-11-23, Task 11 — freeze check runs before supplier/component validation
 
 `postReceipt` checks the inventory freeze before it checks that the supplier and
