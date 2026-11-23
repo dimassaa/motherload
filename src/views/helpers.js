@@ -53,6 +53,7 @@ const STATUS_CHIPS = Object.freeze({
   inactive: { label: 'Неактивна', className: 'chip--muted' },
   archived: { label: 'В архиве', className: 'chip--muted' },
   open: { label: 'Открыт', className: 'chip--warning' },
+  acknowledged: { label: 'Подтверждён', className: 'chip--info' },
   resolved: { label: 'Закрыт', className: 'chip--success' },
   success: { label: 'В норме', className: 'chip--success' },
   ok: { label: 'В норме', className: 'chip--success' },

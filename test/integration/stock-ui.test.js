@@ -112,7 +112,8 @@ test('stock ui: /stock redirects and the navigation never advertises a missing p
   assert.match(storekeeperNav.text, /href="\/analytics\/abc"/);
   assert.match(storekeeperNav.text, /href="\/analytics\/abc"[\s\S]*?Аналитика/);
   assert.doesNotMatch(storekeeperNav.text, /href="\/analytics"/);
-  for (const missing of ['/alerts', '/reports']) {
+  assert.match(storekeeperNav.text, /href="\/alerts"/);
+  for (const missing of ['/reports']) {
     assert.doesNotMatch(
       storekeeperNav.text,
       new RegExp(`href="${missing}"`),
@@ -125,7 +126,8 @@ test('stock ui: /stock redirects and the navigation never advertises a missing p
   assert.equal(adminNav.status, 200);
   assert.match(adminNav.text, /href="\/analytics\/abc"/);
   assert.doesNotMatch(adminNav.text, /href="\/analytics"/);
-  for (const missing of ['/alerts', '/reports']) {
+  assert.match(adminNav.text, /href="\/alerts"/);
+  for (const missing of ['/reports']) {
     assert.doesNotMatch(
       adminNav.text,
       new RegExp(`href="${missing}"`),
@@ -144,9 +146,8 @@ test('stock ui: /stock redirects and the navigation never advertises a missing p
   assert.match(analystNav.text, /href="\/analytics\/abc"/);
   assert.doesNotMatch(analystNav.text, /href="\/analytics"/);
   assert.doesNotMatch(analystNav.text, /href="\/stock"/);
-  for (const missing of ['/alerts', '/reports']) {
-    assert.doesNotMatch(analystNav.text, new RegExp(`href="${missing}"`));
-  }
+  assert.match(analystNav.text, /href="\/alerts"/);
+  assert.doesNotMatch(analystNav.text, /href="\/reports"/);
 });
 
 test('stock ui: an out-of-range document id is a 404, not a database error', async () => {

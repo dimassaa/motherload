@@ -1416,6 +1416,26 @@ a.app-header__identity:hover {
   color: var(--color-danger);
 }
 
+/* Alert rows carry two small state-changing forms side by side. They are not
+   destructive, so the outlined/ghost button hierarchy stays consistent; the
+   message column is capped to keep long Russian sentences readable. */
+.alert-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  align-items: center;
+}
+
+.alert-actions form {
+  display: inline-flex;
+  margin: 0;
+}
+
+.alert-message {
+  min-width: 24ch;
+  max-width: 52ch;
+}
+
 /* Component administration: one long form spread across section cards. The
    narrow column keeps labels and inputs readable; the numeric pairs sit
    side by side on wide screens and stack on phones. */

@@ -16,8 +16,15 @@
     // link instead of a stock link that would immediately answer 403.
     { href: '/stock', label: 'Остатки', roles: ['admin', 'storekeeper'] },
     { href: '/inventory', label: 'Инвентаризация', roles: ['admin', 'storekeeper'] },
-    // Alerts and reports appear here only when their routes land; a navigation
-    // link must never advertise a page the server does not have.
+    // Alerts are read by every role; the badge is the unresolved count computed
+    // in locals.js for authenticated users only. Reports stay hidden until their
+    // route lands: a navigation link must never advertise a 404.
+    {
+      href: '/alerts',
+      label: 'Алерты',
+      roles: ['admin', 'storekeeper', 'analyst'],
+      badge: typeof openAlertsCount !== 'undefined' ? openAlertsCount : 0,
+    },
     { href: '/admin/users', label: 'Пользователи', roles: ['admin'] },
     { href: '/admin/directories', label: 'Справочники', roles: ['admin'] },
     { href: '/admin/components', label: 'Позиции каталога', roles: ['admin'] },
@@ -44,6 +51,11 @@
         <%- isActive(link) ? 'aria-current="page"' : '' %>
       >
         <%= link.label %>
+        <% if (link.badge) { %>
+          <span class="app-nav__badge">
+            <%= link.badge %><span class="visually-hidden"> открытых алертов</span>
+          </span>
+        <% } %>
       </a>
     </li>
   <% } %>

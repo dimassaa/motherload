@@ -188,3 +188,51 @@ matches as soon as one warehouse pair is below its own point. A component with
 a large central stock and one weak regional warehouse is therefore listed with a
 healthy-looking total. The reorder page is the authoritative per-warehouse view;
 a later catalog pass could add a "N складов ниже ROP" hint to the status cell.
+
+## 2026-11-23, Task 20 — dead_stock uses stock age, KPI deadValue does not
+
+`dead_stock` fires when the pair has stock, no issue inside the 90-day window
+(never issued counts), and the oldest still-relevant positive receipt is at least
+90 days old. That flags the actual frozen-inventory case while leaving a fresh
+receipt after an old issue alone.
+
+The dashboard KPI `deadValue` still follows the literal §6.7 formula and counts
+stock of every component with no issue in 90 days, including stock received
+yesterday. Aligning it would change a KPI definition fixed by the spec and
+accepted in Task 19, and would rewrite the Task 19 dashboard expectations; that
+is a product decision, not a local Task 20 fix. The two surfaces therefore
+disagree for brand-new stock. Decide whether §6.7 should gain the stock-age
+condition before the final analytics pass.
+
+## 2026-11-23, Task 20 — manual resolve is intentionally transient
+
+An admin can close an alert manually, but recalculation has no suppression list:
+if the condition is still true, the next pass opens a fresh alert beside the
+resolved history. That is deliberate — a still-true shortage must not stay hidden
+because someone clicked "Закрыть" — and is covered by an integration test. The
+cost is that manual resolution alone does not silence an alert permanently; only
+fixing the stock or resolving the condition does. A per-condition suppression
+window (with an owner and an expiry) would be a separate product feature.
+
+## 2026-11-23, Task 20 — the reference-date helper now has a third copy
+
+`src/services/alerts.js` repeats the `ANALYTICS_REFERENCE_DATE` / Europe/Minsk
+"today" helper already present in `analytics.js` and `catalog.js`. Task 18
+deferred extraction until the third caller appeared; that caller is now here, but
+moving the helper would touch two files outside Task 20's scope. Extract one
+shared clock module when the reports task adds its own windows.
+
+## 2026-11-23, Task 20 — the alert list has no pagination
+
+`/alerts` renders every row matching the filters. A recalculation creates at most
+one open row per condition, so the open view stays small, but a long-lived
+`status=all` selection will grow with every resolved history row. Add pagination
+or a date window when the resolved history becomes useful to browse.
+
+## 2026-11-23, Task 20 — the admin navigation wraps at 1440 px
+
+Adding the eleventh navigation link made the admin header wrap to a second row
+even at 1440 px; the discomfort previously noted for 1280–1439 px now covers the
+reference desktop width. All links remain visible, but a compact admin menu
+(or moving reference data under one "Администрирование" entry) is worth doing
+before the final layout pass.
