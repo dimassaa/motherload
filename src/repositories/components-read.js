@@ -16,42 +16,30 @@ const DISPLAY_ZONE = 'Europe/Minsk';
 
 const ACTIVITY_WINDOW = "interval '180 days'";
 
-// Sort keys are whitelisted: a query parameter must never reach the ORDER BY
-// text. Unknown keys fall back to the display default.
-const SORT_COLUMNS = Object.freeze({
-  name: 'r.name',
-  sku: 'r.sku',
-  qty: 'r.qty',
-  value: 'r.value',
-});
+/** One card render never lists more than the most recent 200 batches. */
+const BATCH_LIMIT = 200;
 
-const DEFAULT_SORT = 'name';
-
-const MOVEMENTS_PAGE_SIZE = 50;
+/**
+ * Escape LIKE metacharacters so a literal `%` or `_` in the search box does not
+ * turn into a wildcard. PostgreSQL's default LIKE escape character is a
+ * backslash; the query states it explicitly for readability.
+ */
+function likePattern(value) {
+  return `%${value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`;
+}
 
 /**
  * Components list across every warehouse.
  *
- * `v_component_stock` supplies the total balance and value. Status is the worst
- * status among warehouses that actually hold the position or moved it in the
- * last 180 days: idle warehouses must not create false shortages. A component
- * with no stock anywhere is `zero` regardless of its thresholds.
+ * `v_component_stock` supplies the total balance and value. The per-warehouse
+ * inputs are aggregated into JSON so the service classifies them with the
+ * shared `stockStatus` function instead of duplicating the rule in SQL. Only
+ * warehouses that hold stock or moved it in the last 180 days contribute: idle
+ * warehouses must not create false shortages.
  */
 const ALL_WAREHOUSES_SOURCE = `
-  with totals as (
-    select component_id, qty, value
-    from v_component_stock
-  ),
-  activity as (
-    select
-      vw.component_id,
-      max(
-        case
-          when vw.qty < vw.min_stock then 2
-          when vw.max_stock is not null and vw.qty > vw.max_stock then 1
-          else 0
-        end
-      ) as status_rank
+  with activity as (
+    select vw.component_id, vw.qty, vw.min_stock, vw.max_stock
     from v_component_warehouse_stock vw
     where vw.qty > 0
        or exists (
@@ -61,7 +49,6 @@ const ALL_WAREHOUSES_SOURCE = `
            and m.warehouse_id = vw.warehouse_id
            and m.created_at >= (($1::date - ${ACTIVITY_WINDOW})::timestamp at time zone '${DISPLAY_ZONE}')
        )
-    group by vw.component_id
   )
   select
     c.id,
@@ -75,18 +62,19 @@ const ALL_WAREHOUSES_SOURCE = `
     mf.name as manufacturer_name,
     coalesce(t.qty, 0)::integer as qty,
     coalesce(t.value, 0)::numeric(16,4) as value,
-    case
-      when coalesce(t.qty, 0) = 0 then 'zero'
-      when coalesce(a.status_rank, 0) >= 2 then 'below_min'
-      when a.status_rank = 1 then 'overstock'
-      else 'ok'
-    end as status
+    coalesce(
+      jsonb_agg(
+        jsonb_build_object('qty', a.qty, 'minStock', a.min_stock, 'maxStock', a.max_stock)
+      ) filter (where a.component_id is not null),
+      '[]'::jsonb
+    ) as warehouse_states
   from components c
   left join categories cat on cat.id = c.category_id
   left join manufacturers mf on mf.id = c.manufacturer_id
-  left join totals t on t.component_id = c.id
+  left join v_component_stock t on t.component_id = c.id
   left join activity a on a.component_id = c.id
   where c.is_active
+  group by c.id, cat.name, mf.name, t.qty, t.value
 `;
 
 /**
@@ -95,11 +83,6 @@ const ALL_WAREHOUSES_SOURCE = `
  * missing balance reads as zero instead of hiding the position.
  */
 const WAREHOUSE_SOURCE = `
-  with balance as (
-    select component_id, qty, value, min_stock, max_stock
-    from v_component_warehouse_stock
-    where warehouse_id = $1
-  )
   select
     c.id,
     c.sku,
@@ -112,16 +95,18 @@ const WAREHOUSE_SOURCE = `
     mf.name as manufacturer_name,
     coalesce(b.qty, 0)::integer as qty,
     coalesce(b.value, 0)::numeric(16,4) as value,
-    case
-      when coalesce(b.qty, 0) = 0 then 'zero'
-      when b.qty < b.min_stock then 'below_min'
-      when b.max_stock is not null and b.qty > b.max_stock then 'overstock'
-      else 'ok'
-    end as status
+    jsonb_build_array(
+      jsonb_build_object(
+        'qty', coalesce(b.qty, 0),
+        'minStock', c.min_stock,
+        'maxStock', c.max_stock
+      )
+    ) as warehouse_states
   from components c
   left join categories cat on cat.id = c.category_id
   left join manufacturers mf on mf.id = c.manufacturer_id
-  left join balance b on b.component_id = c.id
+  left join v_component_warehouse_stock b
+    on b.component_id = c.id and b.warehouse_id = $1
   where c.is_active
 `;
 
@@ -144,7 +129,7 @@ function mapCatalogRow(row) {
     // formats them without a float touching a money value.
     qty: row.qty,
     value: row.value,
-    status: row.status,
+    warehouseStates: row.warehouse_states ?? [],
   };
 }
 
@@ -167,8 +152,10 @@ function buildListQuery(filters) {
   const conditions = [];
 
   if (filters.q) {
-    params.push(`%${filters.q}%`);
-    conditions.push(`(r.name ilike $${params.length} or r.sku ilike $${params.length})`);
+    params.push(likePattern(filters.q));
+    conditions.push(
+      `(r.name ilike $${params.length} escape '\\' or r.sku ilike $${params.length} escape '\\')`,
+    );
   }
   if (filters.categoryId) {
     params.push(filters.categoryId);
@@ -177,10 +164,6 @@ function buildListQuery(filters) {
   if (filters.manufacturerId) {
     params.push(filters.manufacturerId);
     conditions.push(`r.manufacturer_id = $${params.length}`);
-  }
-  if (filters.status && filters.status !== 'all') {
-    params.push(filters.status);
-    conditions.push(`r.status = $${params.length}`);
   }
 
   return {
@@ -191,55 +174,32 @@ function buildListQuery(filters) {
 }
 
 /**
- * One page of catalog rows.
+ * Every catalog row matching search/category/manufacturer/warehouse filters.
+ *
+ * Status is deliberately not computed here: the service classifies the
+ * returned warehouse inputs with the shared `stockStatus` rule, applies the
+ * status filter, sorts and paginates. One fetch also means the activity
+ * `exists` is not duplicated between a count and a page query.
+ *
  * @param {{
  *   q?: string,
  *   categoryId?: number | null,
  *   manufacturerId?: number | null,
  *   warehouseId?: number | null,
- *   status?: 'all' | 'zero' | 'overstock' | 'below_min',
- *   sort?: 'name' | 'sku' | 'qty' | 'value',
- *   dir?: 'asc' | 'desc',
  *   referenceDate: string,
- *   limit: number,
- *   offset: number,
  * }} filters
  */
-export async function listCatalog(filters) {
+export async function listCatalogCandidates(filters) {
   const { source, where, params } = buildListQuery(filters);
-  const limitIndex = params.length + 1;
-  const offsetIndex = params.length + 2;
-  const column = SORT_COLUMNS[filters.sort] ?? SORT_COLUMNS[DEFAULT_SORT];
-  const direction = filters.dir === 'desc' ? 'desc' : 'asc';
-
   const { rows } = await db().query(
     `with rows as (${source})
      select r.*
      from rows r
-     ${where}
-     order by ${column} ${direction}, r.id ${direction}
-     limit $${limitIndex} offset $${offsetIndex}`,
-    [...params, filters.limit, filters.offset],
-  );
-
-  return rows.map(mapCatalogRow);
-}
-
-/**
- * Total rows matching the same filters as {@link listCatalog}; the source is
- * shared so the page count can never disagree with the page contents.
- * @param {Parameters<typeof listCatalog>[0]} filters
- */
-export async function countCatalog(filters) {
-  const { source, where, params } = buildListQuery(filters);
-  const { rows } = await db().query(
-    `with rows as (${source})
-     select count(*)::integer as total
-     from rows r
      ${where}`,
     params,
   );
-  return rows[0].total;
+
+  return rows.map(mapCatalogRow);
 }
 
 function mapComponent(row) {
@@ -300,20 +260,13 @@ export async function findCardComponent(id) {
   return mapComponent(rows[0]);
 }
 
-function warehouseStatus(qty, minStock, maxStock) {
-  if (qty <= 0) return 'zero';
-  if (qty < minStock) return 'below_min';
-  if (maxStock !== null && qty > maxStock) return 'overstock';
-  return 'ok';
-}
-
 /**
  * Per-warehouse balances for the card.
  *
  * The row carries `hasActivity` so the service can hide warehouses with no
  * stock and no movement in the last 180 days by default and reveal them under
- * the `showAll` option. The status rule matches the list query so a row and a
- * card never disagree.
+ * the `showAll` option. Classification is left to the service, which uses the
+ * same `stockStatus` rule as the catalog summary.
  * @param {number} componentId
  * @param {{ referenceDate: string }} options
  */
@@ -358,15 +311,18 @@ export async function listWarehouseBalances(componentId, { referenceDate }) {
     avgCost: row.avg_cost,
     minStock: row.min_stock,
     maxStock: row.max_stock,
-    status: warehouseStatus(row.qty, row.min_stock, row.max_stock),
     hasActivity: row.has_activity,
   }));
 }
 
 /**
- * Batches for the card in FIFO order. Consumed batches stay visible because
- * they explain where the remaining quantity came from.
+ * The most recent batches for the card in FIFO order.
+ *
+ * A position can accumulate thousands of consumed batches; the card only needs
+ * the recent tail. One extra row is fetched to tell the view whether the list
+ * was truncated without a second count query.
  * @param {number} componentId
+ * @returns {Promise<{ items: Array<Record<string, unknown>>, truncated: boolean }>}
  */
 export async function listBatches(componentId) {
   const { rows } = await db().query(
@@ -384,21 +340,28 @@ export async function listBatches(componentId) {
      join warehouses w on w.id = b.warehouse_id
      left join suppliers s on s.id = b.supplier_id
      where b.component_id = $1
-     order by b.received_at, b.id`,
-    [componentId],
+     order by b.received_at desc, b.id desc
+     limit $2`,
+    [componentId, BATCH_LIMIT + 1],
   );
 
-  return rows.map((row) => ({
-    id: row.id,
-    receivedAt: row.received_at,
-    qtyReceived: row.qty_received,
-    qtyRemaining: row.qty_remaining,
-    unitCost: row.unit_cost,
-    documentNo: row.document_no ?? null,
-    warehouseCode: row.warehouse_code,
-    warehouseName: row.warehouse_name,
-    supplierName: row.supplier_name ?? null,
-  }));
+  const truncated = rows.length > BATCH_LIMIT;
+  const items = rows
+    .slice(0, BATCH_LIMIT)
+    .reverse()
+    .map((row) => ({
+      id: row.id,
+      receivedAt: row.received_at,
+      qtyReceived: row.qty_received,
+      qtyRemaining: row.qty_remaining,
+      unitCost: row.unit_cost,
+      documentNo: row.document_no ?? null,
+      warehouseCode: row.warehouse_code,
+      warehouseName: row.warehouse_name,
+      supplierName: row.supplier_name ?? null,
+    }));
+
+  return { items, truncated };
 }
 
 function mapMovement(row) {
@@ -418,9 +381,9 @@ function mapMovement(row) {
 /**
  * One page of movements, newest first.
  * @param {number} componentId
- * @param {{ limit?: number, offset?: number }} [options]
+ * @param {{ limit: number, offset?: number }} options
  */
-export async function listMovements(componentId, { limit = MOVEMENTS_PAGE_SIZE, offset = 0 } = {}) {
+export async function listMovements(componentId, { limit, offset = 0 }) {
   const { rows } = await db().query(
     `select
        m.id,
@@ -464,9 +427,10 @@ export async function countMovements(componentId) {
  * expressed in Europe/Minsk so a movement shortly after local midnight lands
  * in the correct month.
  * @param {number} componentId
- * @param {{ start: string, end: string }} range `YYYY-MM-DD`, end exclusive
+ * @param {{ start: string, end: string, warehouseId?: number | null }} range
+ *   `YYYY-MM-DD`, end exclusive; `warehouseId=null` means every warehouse
  */
-export async function listMonthlyConsumption(componentId, { start, end }) {
+export async function listMonthlyConsumption(componentId, { start, end, warehouseId = null }) {
   const { rows } = await db().query(
     `select
        to_char(date_trunc('month', m.created_at at time zone '${DISPLAY_ZONE}'), 'YYYY-MM') as month,
@@ -476,11 +440,12 @@ export async function listMonthlyConsumption(componentId, { start, end }) {
      where m.component_id = $1
        and d.type = 'issue'
        and m.qty_delta < 0
+       and ($4::int is null or m.warehouse_id = $4)
        and m.created_at >= ($2::date::timestamp at time zone '${DISPLAY_ZONE}')
        and m.created_at < ($3::date::timestamp at time zone '${DISPLAY_ZONE}')
      group by 1
      order by 1`,
-    [componentId, start, end],
+    [componentId, start, end, warehouseId],
   );
 
   return rows.map((row) => ({ month: row.month, qty: row.qty }));
@@ -493,12 +458,12 @@ export async function listMonthlyConsumption(componentId, { start, end }) {
  * @param {number} limit hard upper bound applied by the service
  */
 export async function searchActive(q, limit) {
-  const pattern = `%${q}%`;
+  const pattern = likePattern(q);
   const { rows } = await db().query(
     `select id, sku, name
      from components
      where is_active
-       and ($1 = '' or name ilike $2 or sku ilike $2)
+       and ($1 = '' or name ilike $2 escape '\\' or sku ilike $2 escape '\\')
      order by name, id
      limit $3`,
     [q, pattern, limit],

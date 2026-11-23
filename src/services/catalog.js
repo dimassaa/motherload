@@ -1,5 +1,7 @@
 import { env } from '../config/env.js';
 import { NotFoundError } from '../domain/errors.js';
+import { d } from '../domain/money.js';
+import { stockStatus, worstStockStatus } from '../domain/stock-status.js';
 import * as repository from '../repositories/components-read.js';
 
 /** Catalog page size fixed by the specification. */
@@ -112,6 +114,43 @@ function replenishmentPlaceholder() {
 }
 
 /**
+ * Classify one catalog candidate with the shared stock rule.
+ *
+ * The repository returns the participating warehouse inputs. A component with
+ * no participating warehouse is `zero` when it has no stock at all; otherwise
+ * the worst per-warehouse status wins.
+ */
+function classifyCatalogRow(row) {
+  const states = Array.isArray(row.warehouseStates) ? row.warehouseStates : [];
+  let status;
+
+  if (states.length === 0) {
+    status = row.qty === 0 ? 'zero' : 'ok';
+  } else {
+    status = worstStockStatus(states.map((state) => stockStatus(state)));
+  }
+
+  return { ...row, status };
+}
+
+function compareCatalogRows(a, b, sort, direction) {
+  let result;
+
+  if (sort === 'value') {
+    // Values are PostgreSQL numeric strings; comparing them as Decimal keeps
+    // money off the float path even on the sort path.
+    result = d(a.value).comparedTo(d(b.value));
+  } else if (sort === 'qty') {
+    result = a.qty - b.qty;
+  } else {
+    result = String(a[sort]).localeCompare(String(b[sort]), 'ru');
+  }
+
+  if (result === 0) result = a.id - b.id;
+  return direction === 'desc' ? -result : result;
+}
+
+/**
  * One catalog page.
  * @param {{
  *   q?: string,
@@ -137,21 +176,26 @@ export async function list(filters = {}) {
     referenceDate: referenceDate(),
   };
 
-  // Counting first clamps a stale `?page=999` before its offset is computed,
-  // exactly like the admin list does.
-  const total = await repository.countCatalog(query);
+  // Status needs per-warehouse inputs, so the whole filtered candidate set is
+  // classified here. The catalog is a few hundred rows and this keeps one
+  // stockStatus rule for list, card and future alerts; pagination happens after
+  // the status filter so its count is exact.
+  const candidates = await repository.listCatalogCandidates(query);
+  const classified = candidates.map(classifyCatalogRow);
+  const filtered =
+    query.status === 'all' ? classified : classified.filter((row) => row.status === query.status);
+
+  filtered.sort((a, b) => compareCatalogRows(a, b, query.sort, query.dir));
+
+  const total = filtered.length;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const requested = Number.isInteger(filters.page) && filters.page > 0 ? filters.page : 1;
   const page = Math.min(requested, pages);
-
-  const rows =
-    total === 0
-      ? []
-      : await repository.listCatalog({
-          ...query,
-          limit: PAGE_SIZE,
-          offset: (page - 1) * PAGE_SIZE,
-        });
+  const rows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((row) => {
+    const visible = { ...row };
+    delete visible.warehouseStates;
+    return visible;
+  });
 
   return { rows, total, page, pages };
 }
@@ -159,23 +203,36 @@ export async function list(filters = {}) {
 /**
  * Full component card.
  * @param {number} id
- * @param {{ showAll?: boolean, movementsPage?: number }} [options]
+ * @param {{ showAll?: boolean, movementsPage?: number, warehouseId?: number | null }} [options]
  * @throws {NotFoundError}
  */
-export async function getById(id, { showAll = false, movementsPage = 1 } = {}) {
+export async function getById(id, { showAll = false, movementsPage = 1, warehouseId = null } = {}) {
   const reference = referenceDate();
   const component = await repository.findCardComponent(id);
   if (!component) throw new NotFoundError(NOT_FOUND_MESSAGE);
 
-  const movementTotal = await repository.countMovements(id);
+  const [warehouseRows, batches, movementTotal] = await Promise.all([
+    repository.listWarehouseBalances(id, { referenceDate: reference }),
+    repository.listBatches(id),
+    repository.countMovements(id),
+  ]);
+
+  // The card rows use the same rule as the catalog summary. A warehouse id
+  // that no longer exists falls back to all warehouses instead of rendering an
+  // empty chart with no explanation.
+  const warehousesWithStatus = warehouseRows.map((row) => ({
+    ...row,
+    status: stockStatus(row),
+  }));
+  const selectedWarehouse =
+    warehousesWithStatus.find((row) => row.warehouseId === warehouseId) ?? null;
+
   const movementPages = Math.max(1, Math.ceil(movementTotal / MOVEMENTS_PAGE_SIZE));
   const requested = Number.isInteger(movementsPage) && movementsPage > 0 ? movementsPage : 1;
   const movementPage = Math.min(requested, movementPages);
   const months = monthBuckets(reference);
 
-  const [warehouseRows, batches, movements, monthlyRows] = await Promise.all([
-    repository.listWarehouseBalances(id, { referenceDate: reference }),
-    repository.listBatches(id),
+  const [movements, monthlyRows] = await Promise.all([
     repository.listMovements(id, {
       limit: MOVEMENTS_PAGE_SIZE,
       offset: (movementPage - 1) * MOVEMENTS_PAGE_SIZE,
@@ -183,18 +240,20 @@ export async function getById(id, { showAll = false, movementsPage = 1 } = {}) {
     repository.listMonthlyConsumption(id, {
       start: months[0].start,
       end: months[months.length - 1].end,
+      warehouseId: selectedWarehouse?.warehouseId ?? null,
     }),
   ]);
 
   const visibleWarehouses = showAll
-    ? warehouseRows
-    : warehouseRows.filter((row) => row.hasActivity);
-  const hiddenWarehouses = warehouseRows.length - visibleWarehouses.length;
+    ? warehousesWithStatus
+    : warehousesWithStatus.filter((row) => row.hasActivity);
+  const hiddenWarehouses = warehousesWithStatus.length - visibleWarehouses.length;
 
   return {
     component,
     warehouses: {
       items: visibleWarehouses,
+      all: warehousesWithStatus,
       showAll,
       hiddenCount: hiddenWarehouses,
     },
@@ -205,7 +264,11 @@ export async function getById(id, { showAll = false, movementsPage = 1 } = {}) {
       pages: movementPages,
       total: movementTotal,
     },
-    consumption: buildConsumption(monthlyRows, reference),
+    consumption: {
+      ...buildConsumption(monthlyRows, reference),
+      warehouseId: selectedWarehouse?.warehouseId ?? null,
+      warehouseName: selectedWarehouse?.name ?? null,
+    },
     replenishment: replenishmentPlaceholder(),
   };
 }

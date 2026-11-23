@@ -47,6 +47,7 @@ const cardQuerySchema = z.object({
     (value) => (value === undefined || value === '' || value === null ? 1 : value),
     z.coerce.number().int().min(1).catch(1),
   ),
+  warehouseId: optionalFilterId,
 });
 
 /** A malformed or vanished `:id` names no position, so it is a 404, not a 500. */

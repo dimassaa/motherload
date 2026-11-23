@@ -1556,6 +1556,18 @@ a.app-header__identity:hover {
   list-style: none;
 }
 
+.consumption-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-12);
+  margin-top: var(--space-16);
+}
+
+.consumption-filter .form-field {
+  min-width: 220px;
+}
+
 .consumption-list__row {
   display: grid;
   grid-template-columns: 120px minmax(0, 1fr) 56px;

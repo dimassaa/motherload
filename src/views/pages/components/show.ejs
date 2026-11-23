@@ -8,11 +8,16 @@
   const movementHref = (target) =>
     queryString(`/components/${component.id}`, {
       showAll: warehouses.showAll ? '1' : '',
+      warehouseId: consumption.warehouseId,
       movementsPage: target,
     });
 
   const warehouseToggleHref = queryString(`/components/${component.id}`, {
     showAll: warehouses.showAll ? '' : '1',
+    warehouseId: consumption.warehouseId,
+    // Changing which warehouses are visible must not lose the movement page
+    // the user was reading.
+    movementsPage: movements.page > 1 ? movements.page : '',
   });
 %>
 <section aria-labelledby="component-title">
@@ -173,7 +178,10 @@
 
     <section class="card" aria-labelledby="component-batches-title">
       <h2 id="component-batches-title" class="card__title">Партии</h2>
-      <% if (batches.length === 0) { %>
+      <% if (batches.truncated) { %>
+        <p class="page-header__meta">Показаны последние 200 партий.</p>
+      <% } %>
+      <% if (batches.items.length === 0) { %>
         <%- include('../../partials/empty-state', {
           title: 'Партий пока нет',
           text: 'Позиция ещё не принималась ни на один склад.',
@@ -193,7 +201,7 @@
               </tr>
             </thead>
             <tbody>
-              <% for (const batch of batches) { %>
+              <% for (const batch of batches.items) { %>
                 <tr class="table__row">
                   <td class="table__cell table__cell--code"><%= formatDate(batch.receivedAt) %></td>
                   <td class="table__cell"><%= batch.warehouseName %></td>
@@ -212,10 +220,40 @@
 
     <div class="card-grid">
       <section class="card" aria-labelledby="component-consumption-title">
-        <h2 id="component-consumption-title" class="card__title">Расход по месяцам</h2>
+        <h2 id="component-consumption-title" class="card__title">
+          Расход по месяцам: <%= consumption.warehouseName ?? 'все склады' %>
+        </h2>
         <p class="card__text">
           Списание по документам расхода за 6 месяцев. График появится вместе с аналитикой.
         </p>
+
+        <form class="consumption-filter" method="get" action="/components/<%= component.id %>">
+          <% if (warehouses.showAll) { %>
+            <input type="hidden" name="showAll" value="1">
+          <% } %>
+          <% if (movements.page > 1) { %>
+            <input type="hidden" name="movementsPage" value="<%= movements.page %>">
+          <% } %>
+
+          <div class="form-field">
+            <label class="form-field__label" for="consumption-warehouse">Склад для расхода</label>
+            <select class="form-field__select" id="consumption-warehouse" name="warehouseId">
+              <option value="" <%- consumption.warehouseId === null ? 'selected' : '' %>>
+                Все склады
+              </option>
+              <% for (const warehouse of warehouses.all) { %>
+                <option
+                  value="<%= warehouse.warehouseId %>"
+                  <%- consumption.warehouseId === warehouse.warehouseId ? 'selected' : '' %>
+                >
+                  <%= warehouse.name %>
+                </option>
+              <% } %>
+            </select>
+          </div>
+
+          <button class="btn btn--outline btn--sm" type="submit">Показать</button>
+        </form>
 
         <ul class="consumption-list">
           <% for (const month of consumption.months) { %>
@@ -225,6 +263,7 @@
                 class="consumption-list__progress"
                 max="<%= consumption.max > 0 ? consumption.max : 1 %>"
                 value="<%= month.qty %>"
+                aria-label="<%= month.label %>: <%= formatQty(month.qty) %> <%= component.unit %>"
               ></progress>
               <span class="consumption-list__value"><%= formatQty(month.qty) %></span>
             </li>
