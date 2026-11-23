@@ -2098,6 +2098,103 @@ a.app-header__identity:hover {
   font-family: var(--font-mono);
 }
 
+/* Reorder planning keeps the formulas available without pushing the table off
+   the first screen: the disclosure starts open and the user can fold it. */
+.formula-details summary {
+  cursor: pointer;
+  list-style-position: outside;
+}
+
+.formula-details summary:focus-visible {
+  outline: 2px solid var(--color-deep-fern);
+  outline-offset: 4px;
+  border-radius: var(--radius-tag);
+}
+
+.formula-details[open] summary {
+  margin-bottom: var(--space-8);
+}
+
+.table__details {
+  margin-top: var(--space-8);
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.table__details summary {
+  cursor: pointer;
+  color: var(--color-deep-fern);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.warehouse-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: var(--space-8) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.warehouse-breakdown__item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  align-items: baseline;
+}
+
+.warehouse-breakdown__name {
+  color: var(--color-forest-ink);
+  font-weight: 500;
+}
+
+/* ------------------------------------------------------- Dashboard sections */
+
+.dashboard-section {
+  margin-top: var(--space-24);
+}
+
+.dashboard-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  margin-top: var(--space-24);
+}
+
+.dashboard-links__link {
+  padding: 6px var(--space-12);
+  border-radius: var(--radius-tag);
+  box-shadow: var(--shadow-hairline);
+  background: var(--color-bone-white);
+  color: var(--color-deep-fern);
+  font-size: 13px;
+}
+
+.dashboard-links__link:hover {
+  background: var(--color-bone-white);
+  text-decoration: underline;
+}
+
+.dashboard-links__link:focus-visible {
+  outline: 2px solid var(--color-deep-fern);
+  outline-offset: 2px;
+}
+
+.page-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+/* A table that follows an explanatory paragraph needs the same 16px rhythm as
+   the matrix; the base .table-wrap is margin-neutral because forms place it. */
+.table-wrap--spaced {
+  margin-top: var(--space-16);
+}
+
 /* -------------------------------------------------------------- Responsive */
 
 @media (max-width: 1279px) {
@@ -2211,6 +2308,26 @@ a.app-header__identity:hover {
   .site-footer__inner {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  /* The 3×3 matrix is four short columns, not a wide data table: tightening
+     the cells keeps every class visible without a horizontal scroll. */
+  .matrix__heading,
+  .matrix__corner,
+  .matrix__row-heading,
+  .matrix__cell {
+    padding: 8px 6px;
+  }
+
+  .matrix__heading,
+  .matrix__row-heading {
+    font-size: 10px;
+    letter-spacing: 0.04em;
+  }
+
+  .matrix__corner {
+    font-size: 10px;
+    letter-spacing: 0.02em;
   }
 }
 

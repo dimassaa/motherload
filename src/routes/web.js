@@ -5,6 +5,7 @@ import * as adminDirectoriesController from '../controllers/admin-directories.js
 import * as analyticsController from '../controllers/analytics.js';
 import * as authController from '../controllers/auth.js';
 import * as componentsController from '../controllers/components.js';
+import * as dashboardController from '../controllers/dashboard.js';
 import * as inventoryController from '../controllers/inventory.js';
 import * as profileController from '../controllers/profile.js';
 import * as stockController from '../controllers/stock.js';
@@ -36,7 +37,7 @@ export function createWebRouter({ loginLimiter }) {
   router.get('/', authController.showLanding);
   router.post('/login', loginLimiter, authController.login);
   router.post('/logout', authController.logout);
-  router.get('/dashboard', requireAuth, authController.showDashboard);
+  router.get('/dashboard', requireAuth, dashboardController.showDashboard);
 
   // The catalog is readable by every role. Archiving and editing stay on the
   // admin routes so the read model cannot be used to mutate a position.
@@ -48,6 +49,7 @@ export function createWebRouter({ loginLimiter }) {
   // routes, so there is nothing to protect beyond authentication.
   router.get('/analytics/abc', requireAuth, analyticsController.showAbc);
   router.get('/analytics/xyz', requireAuth, analyticsController.showXyz);
+  router.get('/analytics/reorder', requireAuth, analyticsController.showReorder);
 
   // Stock operations are a storekeeper/admin workflow. Every route enforces
   // the role on the server; the navigation only hides the links. `/stock`

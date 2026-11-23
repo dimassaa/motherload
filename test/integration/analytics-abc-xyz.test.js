@@ -531,10 +531,16 @@ test('analyst can read ABC and XYZ pages while guests are redirected', async () 
   assert.doesNotMatch(xyz.text, /\/js\/charts\.js/);
   assert.match(xyz.text, /href="\/analytics\/abc/);
 
-  // The chart bundle is page-scoped: other screens must not pay for it.
+  // The chart bundle is page-scoped: a screen without a canvas must not pay
+  // for it. Task 19 gave the dashboard its own category chart, so the catalog
+  // is the control screen here.
+  const catalog = await agent.get('/components');
+  assert.equal(catalog.status, 200);
+  assert.doesNotMatch(catalog.text, /\/js\/charts\.js/);
+
   const dashboard = await agent.get('/dashboard');
   assert.equal(dashboard.status, 200);
-  assert.doesNotMatch(dashboard.text, /\/js\/charts\.js/);
+  assert.match(dashboard.text, /\/js\/charts\.js/);
 
   const guest = createTestApp().agent;
   const denied = await guest.get('/analytics/abc');

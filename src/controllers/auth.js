@@ -106,12 +106,3 @@ export async function logout(req, res, next) {
     next(error);
   }
 }
-
-/**
- * `GET /dashboard` — placeholder shell until Task 19 adds the real KPIs,
- * charts and movement feed. Keeping the route here makes the Task 4 auth flow
- * complete without borrowing Task 19's scope.
- */
-export function showDashboard(req, res) {
-  res.render('pages/dashboard', { title: 'Обзор — Motherload' });
-}

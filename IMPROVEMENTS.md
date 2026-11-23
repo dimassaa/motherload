@@ -151,3 +151,40 @@ and consumers differ, so this stage left both in place. Extract one query when
 a third caller (reports or the dashboard feed) needs the same aggregation.
 
 
+
+## 2026-11-23, Task 19 — catalog recomputes ROP on every page load
+
+The catalog now attaches the reorder point and supports `status=below_rop`, so
+`catalog.list` runs the full pair calculation (two analytics queries plus the
+domain pass) even when the user only asked for the default name-sorted list.
+With the demo catalogue this is measured in milliseconds; a much larger
+catalogue should compute ROP once per request, cache it for a short TTL, or
+move the below-ROP filter into SQL with a materialised planning view. Deferred
+until a real dataset shows the cost.
+
+## 2026-11-23, Task 19 — aggregate low-data flag is conservative
+
+In "all warehouses" mode a component is flagged «мало данных» as soon as one
+participating pair has fewer than 14 days of consumption, because that pair's
+ROP comes from the `min_stock` fallback and is still summed into the row. The
+per-warehouse disclosure shows which pair is short, so the number is explained,
+but a future iteration could expose a distinct "частично" state or exclude the
+fallback pair from the aggregate ROP while keeping its suggested quantity.
+
+## 2026-11-23, Task 19 — negative ledger balances are clamped in analytics
+
+`calculateReorder` correctly rejects negative balances. Read-only analytics can
+still meet a negative per-warehouse balance from legacy fixtures or a manually
+edited ledger, so the service clamps it to zero before planning instead of
+failing the whole dashboard. This keeps the page available but hides a real
+data-integrity problem; a dedicated consistency check or alert (Task 20) should
+surface negative balances, and the issue document remains the only writer that
+must prevent them.
+
+## 2026-11-23, Task 19 — catalog below-ROP row can look healthy by totals
+
+The catalog row shows the summed balance and summed ROP, while `below_rop`
+matches as soon as one warehouse pair is below its own point. A component with
+a large central stock and one weak regional warehouse is therefore listed with a
+healthy-looking total. The reorder page is the authoritative per-warehouse view;
+a later catalog pass could add a "N складов ниже ROP" hint to the status cell.

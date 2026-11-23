@@ -124,6 +124,9 @@
         <option value="below_min" <%- filters.status === 'below_min' ? 'selected' : '' %>>
           Ниже минимума
         </option>
+        <option value="below_rop" <%- filters.status === 'below_rop' ? 'selected' : '' %>>
+          Ниже точки заказа
+        </option>
         <option value="overstock" <%- filters.status === 'overstock' ? 'selected' : '' %>>
           Избыток
         </option>
@@ -184,8 +187,13 @@
             </th>
             <th class="table__heading" scope="col">Ед.</th>
             <th class="table__heading table__cell--num" scope="col">Мин.</th>
-            <th class="table__heading table__cell--num" scope="col">
-              <span title="Точка заказа появится вместе с аналитикой">ROP</span>
+            <th class="table__heading table__cell--num" scope="col" <%- sortAttr('rop') %>>
+              <a class="sort-link" href="<%= sortHref('rop') %>" title="Точка заказа по правилам аналитики">
+                ROP
+                <% if (filters.sort === 'rop') { %>
+                  <span aria-hidden="true"><%= filters.dir === 'asc' ? '↑' : '↓' %></span>
+                <% } %>
+              </a>
             </th>
             <th class="table__heading table__cell--num" scope="col" <%- sortAttr('value') %>>
               <a class="sort-link" href="<%= sortHref('value') %>">
@@ -222,10 +230,19 @@
               <td class="table__cell table__cell--num"><%= formatQty(item.qty) %></td>
               <td class="table__cell"><%= item.unit %></td>
               <td class="table__cell table__cell--num"><%= formatQty(item.minStock) %></td>
-              <td class="table__cell table__cell--num table__cell--muted">—</td>
+              <td class="table__cell table__cell--num">
+                <% if (item.rop === null) { %>
+                  <span class="table__cell--muted">—</span>
+                <% } else { %>
+                  <%= formatNumber(item.rop, 2) %>
+                <% } %>
+              </td>
               <td class="table__cell table__cell--num"><%- money(item.value) %></td>
               <td class="table__cell">
                 <%- include('../../partials/status-chip', { status: item.status }) %>
+                <% if (item.belowRop && (item.status === 'ok' || item.status === 'overstock')) { %>
+                  <span class="tag tag--plain">ниже ROP</span>
+                <% } %>
               </td>
             </tr>
           <% } %>

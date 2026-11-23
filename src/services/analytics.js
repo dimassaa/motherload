@@ -1,18 +1,20 @@
 import { env } from '../config/env.js';
-import { XYZ_MONTHS } from '../config/inventory.js';
+import { ACTIVITY_WINDOW_DAYS, DEMAND_WINDOW_DAYS, XYZ_MONTHS } from '../config/inventory.js';
 import { classifyAbc } from '../domain/abc.js';
-import { classifyXyz } from '../domain/xyz.js';
+import { calculateKpi } from '../domain/kpi.js';
 import { d } from '../domain/money.js';
+import { calculateReorder } from '../domain/reorder.js';
+import { classifyXyz } from '../domain/xyz.js';
 import * as repository from '../repositories/analytics.js';
 
 /**
- * ABC and XYZ analytics.
+ * ABC, XYZ, reorder planning and the KPI dashboard.
  *
- * The two analyses deliberately share one filter contract `{ warehouseId,
- * categoryId }` so the XYZ matrix can reuse the ABC classification without a
- * second interpretation of the same screen. All money arithmetic goes through
- * decimal.js; quantities are integers and are converted to Number only for the
- * domain classifier and for chart labels.
+ * The screens deliberately share one filter contract `{ warehouseId,
+ * categoryId }` so the XYZ matrix can reuse the ABC classification and the
+ * catalog/dashboard can reuse one reorder interpretation. All money arithmetic
+ * goes through decimal.js; quantities are integers and are converted to Number
+ * only for the domain classifiers and chart labels.
  */
 
 const MONTH_LABELS = Object.freeze([
@@ -290,4 +292,374 @@ export async function getXyz(filters = {}) {
   );
 
   return { rows, matrix: buildMatrix(rows, abcClassById), window };
+}
+
+/* ------------------------------------------------------------- Reorder plan */
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const ATTENTION_LIMIT = 8;
+const RECENT_MOVEMENTS_LIMIT = 8;
+
+const MOVEMENT_TYPE_LABELS = Object.freeze({
+  receipt: 'Приёмка',
+  issue: 'Расход',
+  transfer: 'Перемещение',
+  adjustment: 'Корректировка',
+});
+
+/** Calendar arithmetic stays on ISO strings so no local timezone leaks in. */
+function addDays(iso, days) {
+  const [year, month, day] = iso.split('-').map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day) + days * DAY_MS);
+  return shifted.toISOString().slice(0, 10);
+}
+
+function daysBetween(fromIso, toIso) {
+  return Math.round(
+    (Date.parse(`${toIso}T00:00:00Z`) - Date.parse(`${fromIso}T00:00:00Z`)) / DAY_MS,
+  );
+}
+
+/**
+ * The rolling 90-day demand window ending on the reference date.
+ *
+ * `end` is the last covered calendar day for display; `endExclusive` is the
+ * half-open bound handed to SQL. The array indices are 0..89, with index 89
+ * representing the reference day.
+ */
+function demandWindow(reference) {
+  return {
+    start: addDays(reference, -(DEMAND_WINDOW_DAYS - 1)),
+    end: reference,
+    endExclusive: addDays(reference, 1),
+    days: DEMAND_WINDOW_DAYS,
+    referenceDate: reference,
+  };
+}
+
+/**
+ * Calendar days since the first consumption, capped at the window length.
+ *
+ * The first demand day counts as day one: a position first issued 14 days ago
+ * has exactly 14 days of history and clears the domain's trust floor. No
+ * consumption at all is zero days, which always triggers the low-data fallback.
+ */
+function historyDays(firstIssueDate, reference) {
+  if (!firstIssueDate) return 0;
+  const elapsed = daysBetween(firstIssueDate, reference) + 1;
+  return Math.min(Math.max(elapsed, 0), DEMAND_WINDOW_DAYS);
+}
+
+/**
+ * One pair below its reorder point is a shortage; zero stock is the sharper
+ * label because the user must act before anything else.
+ */
+function pairStatus(balance, rop) {
+  if (balance <= 0) return 'zero';
+  if (balance < rop) return 'below_rop';
+  return 'ok';
+}
+
+function emptyDailyWindow() {
+  return Array(DEMAND_WINDOW_DAYS).fill(0);
+}
+
+/**
+ * Run the domain calculation for every participating pair.
+ *
+ * The daily map is sparse from SQL; the domain requires exactly 90 entries, so
+ * every quiet day is filled with a zero before the call. `historyDays` comes
+ * from the first issue rather than from the zero-filled array length, which is
+ * the whole point of the low-data badge.
+ */
+function buildReorderPairs(pairs, dailyRows, window) {
+  const dailyByPair = new Map();
+
+  for (const row of dailyRows) {
+    const index = daysBetween(window.start, row.day);
+    if (index < 0 || index >= DEMAND_WINDOW_DAYS) continue;
+
+    const key = `${row.componentId}:${row.warehouseId}`;
+    const bucket = dailyByPair.get(key) ?? emptyDailyWindow();
+    bucket[index] = row.qty;
+    dailyByPair.set(key, bucket);
+  }
+
+  return pairs.map((pair) => {
+    const dailyQuantities =
+      dailyByPair.get(`${pair.componentId}:${pair.warehouseId}`) ?? emptyDailyWindow();
+    const unitCost = pair.avgCost ?? pair.purchasePrice;
+    // A document service never lets the ledger go below zero, but read-only
+    // analytics can meet legacy or fixture data where issues exceed receipts.
+    // Treat that impossible balance as empty stock instead of failing the whole
+    // dashboard with a validation error; the rest of the page stays usable.
+    const balance = Math.max(0, pair.qty);
+    const computed = calculateReorder({
+      dailyQuantities,
+      historyDays: historyDays(pair.firstIssueDate, window.referenceDate),
+      leadTimeDays: pair.leadTimeDays,
+      minStock: pair.minStock,
+      balance,
+      unitCost,
+    });
+
+    return {
+      componentId: pair.componentId,
+      sku: pair.sku,
+      name: pair.name,
+      unit: pair.unit,
+      categoryName: pair.categoryName,
+      warehouse: {
+        warehouseId: pair.warehouseId,
+        code: pair.warehouseCode,
+        name: pair.warehouseName,
+        city: pair.warehouseCity,
+      },
+      warehouseName: pair.warehouseName,
+      balance,
+      unitCost,
+      leadTimeDays: pair.leadTimeDays,
+      avgDaily: computed.avgDaily,
+      stddev: computed.stddev,
+      safetyStock: computed.safetyStock,
+      rop: computed.rop,
+      eoq: computed.eoq,
+      suggested: computed.suggested,
+      lowData: computed.lowData,
+      status: pairStatus(balance, computed.rop),
+      belowRop: balance < computed.rop,
+    };
+  });
+}
+
+/**
+ * Worst planning state across the warehouses of one component.
+ *
+ * The aggregate row must not say "в норме" while it also recommends an order:
+ * a single pair below its own ROP is enough to put the whole position into the
+ * below-ROP bucket, exactly like the dashboard KPI counts it.
+ */
+const REORDER_STATUS_RANK = Object.freeze({ zero: 2, below_rop: 1, ok: 0 });
+
+function worstReorderStatus(pairs) {
+  return pairs.reduce(
+    (worst, pair) =>
+      REORDER_STATUS_RANK[pair.status] > REORDER_STATUS_RANK[worst] ? pair.status : worst,
+    'ok',
+  );
+}
+
+/**
+ * Roll the per-warehouse pairs up into one row per component.
+ *
+ * §6.6 fixes the aggregation: balances, ROP, safety stock and suggested are
+ * summed; EOQ is a single order size and is therefore the maximum, never a sum.
+ * The row keeps every pair under `warehouses` so the page can reveal the
+ * detail the summary hides.
+ */
+function aggregateReorderRows(pairs) {
+  const byComponent = new Map();
+
+  for (const pair of pairs) {
+    const group = byComponent.get(pair.componentId) ?? {
+      componentId: pair.componentId,
+      sku: pair.sku,
+      name: pair.name,
+      unit: pair.unit,
+      categoryName: pair.categoryName,
+      balance: 0,
+      avgDaily: d(0),
+      safetyStock: d(0),
+      rop: d(0),
+      eoq: 0,
+      suggested: 0,
+      warehouses: [],
+    };
+
+    group.balance += pair.balance;
+    group.avgDaily = group.avgDaily.plus(d(pair.avgDaily));
+    group.safetyStock = group.safetyStock.plus(d(pair.safetyStock));
+    group.rop = group.rop.plus(d(pair.rop));
+    group.eoq = Math.max(group.eoq, pair.eoq);
+    group.suggested += pair.suggested;
+    group.warehouses.push(pair);
+
+    byComponent.set(pair.componentId, group);
+  }
+
+  const rows = [...byComponent.values()].map((group) => {
+    const rop = Number(group.rop.toFixed(2));
+    const warehouses = [...group.warehouses].sort((left, right) =>
+      left.warehouseName.localeCompare(right.warehouseName, 'ru'),
+    );
+
+    return {
+      componentId: group.componentId,
+      sku: group.sku,
+      name: group.name,
+      unit: group.unit,
+      categoryName: group.categoryName,
+      balance: group.balance,
+      avgDaily: Number(group.avgDaily.toFixed(4)),
+      safetyStock: Number(group.safetyStock.toFixed(2)),
+      rop,
+      eoq: group.eoq,
+      suggested: group.suggested,
+      // Any untrustworthy pair taints the sum: part of the ROP may be the
+      // min_stock fallback, so the badge must still warn the reader.
+      lowData: warehouses.some((pair) => pair.lowData),
+      status: worstReorderStatus(warehouses),
+      belowRop: warehouses.some((pair) => pair.belowRop),
+      anyWarehouseBelowRop: warehouses.some((pair) => pair.belowRop),
+      warehouses,
+      warehouseCount: warehouses.length,
+    };
+  });
+
+  return rows.sort(compareReorderRows);
+}
+
+function reorderSeverity(row) {
+  if (row.status === 'zero') return 0;
+  if (row.status === 'below_rop') return 1;
+  return 2;
+}
+
+function compareReorderRows(left, right) {
+  const severity = reorderSeverity(left) - reorderSeverity(right);
+  if (severity !== 0) return severity;
+  if (left.suggested !== right.suggested) return right.suggested - left.suggested;
+  return left.name.localeCompare(right.name, 'ru') || left.componentId - right.componentId;
+}
+
+/**
+ * Reorder planning for one filter selection.
+ *
+ * With a warehouse selected the rows are component/warehouse pairs. Without
+ * one they are components aggregated exactly as §6.6 describes, while each row
+ * still carries the per-warehouse detail for the expandable table note.
+ *
+ * @param {{ warehouseId?: number|null, categoryId?: number|null }} [filters]
+ * @returns {Promise<{
+ *   rows: Array<Record<string, unknown>>,
+ *   window: {
+ *     start: string, end: string, endExclusive: string,
+ *     days: number, referenceDate: string
+ *   },
+ *   pairCount: number
+ * }>}
+ */
+export async function getReorder(filters = {}) {
+  const warehouseId = filters.warehouseId ?? null;
+  const categoryId = filters.categoryId ?? null;
+  const window = demandWindow(referenceDate());
+  const activityStart = addDays(window.referenceDate, -ACTIVITY_WINDOW_DAYS);
+
+  const [pairs, dailyRows] = await Promise.all([
+    repository.listReorderPairs({ warehouseId, categoryId, activityStart }),
+    repository.listDailyIssues({
+      warehouseId,
+      categoryId,
+      start: window.start,
+      end: window.endExclusive,
+    }),
+  ]);
+
+  const pairRows = buildReorderPairs(pairs, dailyRows, window);
+
+  if (warehouseId) {
+    pairRows.sort(compareReorderRows);
+    return { rows: pairRows, window, pairCount: pairRows.length };
+  }
+
+  return { rows: aggregateReorderRows(pairRows), window, pairCount: pairRows.length };
+}
+
+/* ----------------------------------------------------------------- Dashboard */
+
+function compareAttentionRows(left, right) {
+  if (left.suggested !== right.suggested) return right.suggested - left.suggested;
+  const leftDeficit = left.rop - left.balance;
+  const rightDeficit = right.rop - right.balance;
+  if (leftDeficit !== rightDeficit) return rightDeficit - leftDeficit;
+  return left.name.localeCompare(right.name, 'ru') || left.componentId - right.componentId;
+}
+
+/**
+ * Everything the dashboard needs in one call.
+ *
+ * The below-ROP count is per distinct component with at least one warehouse
+ * pair below its own ROP, while the attention table stays at pair level because
+ * that is where the order is actually placed. The matrix and demand windows are
+ * reused from XYZ so the dashboard cannot disagree with the analytics pages.
+ *
+ * @returns {Promise<{
+ *   kpis: {
+ *     stockValue: string, cogs90: string, deadValue: string,
+ *     belowRopCount: number, turnoverYear: number|null, coverageDays: number|null
+ *   },
+ *   categoryValues: Array<{ name: string, value: string }>,
+ *   categoryChart: { type: 'category-bar', labels: string[], values: number[] },
+ *   attention: Array<Record<string, unknown>>,
+ *   matrix: Record<string, unknown>,
+ *   recentMovements: Array<Record<string, unknown>>,
+ *   window: Record<string, unknown>
+ * }>}
+ */
+export async function getDashboard() {
+  const window = demandWindow(referenceDate());
+  const [totals, categoryValues, recentMovements, reorder, xyz] = await Promise.all([
+    repository.getKpiTotals({ start: window.start, end: window.endExclusive }),
+    repository.listCategoryValues(),
+    repository.listRecentMovements(RECENT_MOVEMENTS_LIMIT),
+    getReorder({}),
+    getXyz({}),
+  ]);
+
+  const kpi = calculateKpi({ stockValue: totals.stockValue, cogs90: totals.cogs90 });
+
+  const pairsBelowRop = reorder.rows.flatMap((row) =>
+    row.warehouses.filter((pair) => pair.belowRop),
+  );
+  const attention = [...pairsBelowRop]
+    .sort(compareAttentionRows)
+    .slice(0, ATTENTION_LIMIT)
+    .map((pair) => ({
+      componentId: pair.componentId,
+      sku: pair.sku,
+      name: pair.name,
+      unit: pair.unit,
+      warehouseId: pair.warehouse.warehouseId,
+      warehouseName: pair.warehouseName,
+      balance: pair.balance,
+      rop: pair.rop,
+      suggested: pair.suggested,
+      lowData: pair.lowData,
+    }));
+
+  return {
+    kpis: {
+      stockValue: totals.stockValue,
+      cogs90: totals.cogs90,
+      deadValue: totals.deadValue,
+      belowRopCount: reorder.rows.filter((row) => row.anyWarehouseBelowRop).length,
+      turnoverYear: kpi.turnoverYear,
+      coverageDays: kpi.coverageDays,
+    },
+    categoryValues,
+    // Chart.js accepts numbers only; this conversion is display-only and the
+    // table/cards keep the exact numeric strings.
+    categoryChart: {
+      type: 'category-bar',
+      labels: categoryValues.map((item) => item.name),
+      values: categoryValues.map((item) => Number(d(item.value).toFixed(2))),
+    },
+    attention,
+    matrix: xyz.matrix,
+    recentMovements: recentMovements.map((movement) => ({
+      ...movement,
+      typeLabel: MOVEMENT_TYPE_LABELS[movement.documentType] ?? MOVEMENT_TYPE_LABELS.adjustment,
+    })),
+    window,
+  };
 }

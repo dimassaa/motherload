@@ -19,6 +19,16 @@ const percentFormatter = new Intl.NumberFormat('ru-BY', {
   maximumFractionDigits: 2,
 });
 
+// Axis ticks are narrow: dropping the cents keeps four labels readable on a
+// phone without changing the exact values in the table or the tooltip.
+const axisMoneyFormatter = new Intl.NumberFormat('ru-BY', {
+  maximumFractionDigits: 0,
+});
+
+function formatAxisMoney(value) {
+  return axisMoneyFormatter.format(value).replaceAll(GROUP_SPACES, ' ');
+}
+
 function formatMoney(value) {
   return moneyFormatter.format(value).replaceAll(GROUP_SPACES, ' ');
 }
@@ -139,11 +149,73 @@ function renderPareto(canvas, config) {
   });
 }
 
+/**
+ * Horizontal bars for stock value per category.
+ *
+ * Categories read as text, so a horizontal bar keeps their labels on one line
+ * instead of rotating a date-like axis. One series, no legend: the card title
+ * already names it.
+ * @param {HTMLCanvasElement} canvas
+ * @param {{ labels: string[], values: number[] }} config
+ */
+function renderCategoryBar(canvas, config) {
+  const ink = token('--color-forest-ink', '#09352e');
+  const moss = token('--color-moss', '#85c093');
+  const muted = token('--color-text-muted', '#4f5c5b');
+  const bodyFont = getComputedStyle(document.body).fontFamily;
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: config.labels,
+      datasets: [
+        {
+          label: 'Стоимость, BYN',
+          data: config.values,
+          backgroundColor: moss,
+          borderRadius: 4,
+          borderSkipped: false,
+        },
+      ],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: reduceMotion ? false : { duration: 400 },
+      color: ink,
+      font: { family: bodyFont, size: 11 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (context) => `Стоимость: ${formatMoney(context.parsed.x)} BYN`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          title: { display: true, text: 'Стоимость, BYN', color: muted },
+          grid: { color: token('--color-lichen', '#cad3d2') },
+          ticks: { color: muted, maxTicksLimit: 5, callback: (value) => formatAxisMoney(value) },
+        },
+        y: {
+          grid: { display: false },
+          ticks: { color: ink, autoSkip: false },
+        },
+      },
+    },
+  });
+}
+
 function init() {
   for (const node of document.querySelectorAll('canvas[data-chart]')) {
     const config = readConfig(node);
     if (!config || !Array.isArray(config.labels) || config.labels.length === 0) continue;
     if (config.type === 'pareto') renderPareto(node, config);
+    if (config.type === 'category-bar') renderCategoryBar(node, config);
   }
 }
 
