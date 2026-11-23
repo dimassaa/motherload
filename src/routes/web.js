@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as adminController from '../controllers/admin.js';
 import * as adminComponentsController from '../controllers/admin-components.js';
 import * as adminDirectoriesController from '../controllers/admin-directories.js';
+import * as alertsController from '../controllers/alerts.js';
 import * as analyticsController from '../controllers/analytics.js';
 import * as authController from '../controllers/auth.js';
 import * as componentsController from '../controllers/components.js';
@@ -50,6 +51,19 @@ export function createWebRouter({ loginLimiter }) {
   router.get('/analytics/abc', requireAuth, analyticsController.showAbc);
   router.get('/analytics/xyz', requireAuth, analyticsController.showXyz);
   router.get('/analytics/reorder', requireAuth, analyticsController.showReorder);
+
+  // Alerts are readable by every role. Acknowledging is a stock-side action
+  // (admin/storekeeper); manual closing and recalculation stay admin-only.
+  // `/alerts/recalculate` is a literal sibling of `/:id/...`, so no dynamic
+  // segment can shadow it.
+  router.get('/alerts', requireAuth, alertsController.showAlerts);
+  router.post('/alerts/recalculate', requireRole('admin'), alertsController.recalculate);
+  router.post(
+    '/alerts/:id/acknowledge',
+    requireRole('admin', 'storekeeper'),
+    alertsController.acknowledge,
+  );
+  router.post('/alerts/:id/resolve', requireRole('admin'), alertsController.resolve);
 
   // Stock operations are a storekeeper/admin workflow. Every route enforces
   // the role on the server; the navigation only hides the links. `/stock`

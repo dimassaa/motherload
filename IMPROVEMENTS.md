@@ -188,3 +188,37 @@ matches as soon as one warehouse pair is below its own point. A component with
 a large central stock and one weak regional warehouse is therefore listed with a
 healthy-looking total. The reorder page is the authoritative per-warehouse view;
 a later catalog pass could add a "N складов ниже ROP" hint to the status cell.
+
+## 2026-11-23, Task 20 — dead_stock requires a prior issue
+
+`dead_stock` fires only when the pair has at least one historical issue and the
+newest one is older than 90 days. The literal §6.8 wording ("нет расходных
+движений 90 дней") would also flag stock received yesterday, which would put a
+dead-stock alert on every fresh receipt and bury the page in noise. The dashboard
+KPI `deadValue` still counts never-issued stock as frozen money, so the two
+surfaces disagree for a brand-new position. Decide whether the KPI should apply
+the same prior-demand rule or the alert should be renamed; the current choice is
+deliberate and covered by an integration test.
+
+## 2026-11-23, Task 20 — the reference-date helper now has a third copy
+
+`src/services/alerts.js` repeats the `ANALYTICS_REFERENCE_DATE` / Europe/Minsk
+"today" helper already present in `analytics.js` and `catalog.js`. Task 18
+deferred extraction until the third caller appeared; that caller is now here, but
+moving the helper would touch two files outside Task 20's scope. Extract one
+shared clock module when the reports task adds its own windows.
+
+## 2026-11-23, Task 20 — the alert list has no pagination
+
+`/alerts` renders every row matching the filters. A recalculation creates at most
+one open row per condition, so the open view stays small, but a long-lived
+`status=all` selection will grow with every resolved history row. Add pagination
+or a date window when the resolved history becomes useful to browse.
+
+## 2026-11-23, Task 20 — the admin navigation wraps at 1440 px
+
+Adding the eleventh navigation link made the admin header wrap to a second row
+even at 1440 px; the discomfort previously noted for 1280–1439 px now covers the
+reference desktop width. All links remain visible, but a compact admin menu
+(or moving reference data under one "Администрирование" entry) is worth doing
+before the final layout pass.
