@@ -237,13 +237,14 @@ reference desktop width. All links remain visible, but a compact admin menu
 (or moving reference data under one "Администрирование" entry) is worth doing
 before the final layout pass.
 
-## 2026-11-23, Task 21 — catalog export button is still missing
+## 2026-11-23, Task 21 — catalog CSV export (done)
 
-§5.3 asks for an «Экспорт CSV» button on `/components` that keeps the current
-filters. `/reports/export/stock` accepts `warehouseId` and `categoryId`, so the
-data path exists, but the catalog view and controller are outside Task 21's file
-scope. A short follow-up should compose that URL with `queryString()` and add the
-button beside the filter form; the report itself needs no new code.
+§5.3's «Экспорт CSV» button is now on `/components` and carries `q`,
+`categoryId`, `manufacturerId`, `warehouseId`, `status`, `sort` and `dir` to
+`/reports/export/stock`. The stock report calls `catalog.listAll()`, the
+non-paginated variant of the same catalog service, so the file matches the
+screen including zero-balance rows under `status=all`/`status=zero`. There is no
+remaining follow-up for this requirement.
 
 ## 2026-11-23, Task 21 — the reference-date helper now has a fourth copy
 

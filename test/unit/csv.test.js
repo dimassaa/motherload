@@ -77,10 +77,9 @@ test('CSV applies column formatters and renders null as an empty cell', () => {
   assert.match(csv, /Без суммы;\r\n/);
 });
 
-test('csvFilename uses the report prefix and ISO date', () => {
+test('csvFilename uses the report prefix and an ISO date string', () => {
   assert.equal(csvFilename('stock', '2026-11-22'), 'motherload-stock-2026-11-22.csv');
-  assert.equal(
-    csvFilename('movements', new Date('2026-11-20T10:00:00Z')),
-    'motherload-movements-2026-11-20.csv',
-  );
+  assert.equal(csvFilename('movements', '2026-11-20'), 'motherload-movements-2026-11-20.csv');
+  assert.throws(() => csvFilename('stock', new Date('2026-11-20T10:00:00Z')), TypeError);
+  assert.throws(() => csvFilename('stock', '2026-13-45'), TypeError);
 });

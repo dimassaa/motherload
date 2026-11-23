@@ -11,8 +11,40 @@ import * as reportsService from '../services/reports.js';
  */
 
 const optionalFilterId = z.preprocess(
-  (value) => (value === undefined || value === null || value === '' ? null : value),
-  z.union([z.null(), z.coerce.number().int().positive()]).catch(null),
+  (value) => (value === undefined || value === null || value === '' ? undefined : value),
+  z.coerce
+    .number({ error: 'Фильтр указан неверно.' })
+    .int('Фильтр указан неверно.')
+    .positive('Фильтр указан неверно.')
+    .optional(),
+);
+
+const optionalSearch = z.preprocess(
+  (value) => (typeof value === 'string' ? value.trim() : value),
+  z.string().max(120, 'Поиск — не длиннее 120 символов').optional(),
+);
+
+const optionalStatus = z.preprocess(
+  (value) => (value === undefined || value === null || value === '' ? undefined : value),
+  z
+    .enum(['all', 'zero', 'overstock', 'below_min', 'below_rop'], {
+      error: 'Некорректный фильтр остатка.',
+    })
+    .optional(),
+);
+
+const optionalSort = z.preprocess(
+  (value) => (value === undefined || value === null || value === '' ? undefined : value),
+  z
+    .enum(['name', 'sku', 'qty', 'value', 'rop'], {
+      error: 'Некорректная сортировка отчёта.',
+    })
+    .optional(),
+);
+
+const optionalDirection = z.preprocess(
+  (value) => (value === undefined || value === null || value === '' ? undefined : value),
+  z.enum(['asc', 'desc'], { error: 'Некорректное направление сортировки.' }).optional(),
 );
 
 const optionalDate = z.preprocess(
@@ -33,8 +65,13 @@ const optionalCountId = z.preprocess(
 );
 
 const exportQuerySchema = z.object({
+  q: optionalSearch,
   warehouseId: optionalFilterId,
   categoryId: optionalFilterId,
+  manufacturerId: optionalFilterId,
+  status: optionalStatus,
+  sort: optionalSort,
+  dir: optionalDirection,
   dateFrom: optionalDate,
   dateTo: optionalDate,
   countId: optionalCountId,

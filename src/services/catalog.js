@@ -191,21 +191,11 @@ async function attachReorderPoints(rows, { warehouseId, categoryId }) {
 }
 
 /**
- * One catalog page.
- * @param {{
- *   q?: string,
- *   categoryId?: number | null,
- *   manufacturerId?: number | null,
- *   warehouseId?: number | null,
- *   status?: 'all' | 'zero' | 'overstock' | 'below_min' | 'below_rop',
- *   sort?: 'name' | 'sku' | 'qty' | 'value' | 'rop',
- *   dir?: 'asc' | 'desc',
- *   page?: number,
- * }} [filters]
- * @returns {Promise<{ rows: Array<Record<string, unknown>>, total: number, page: number, pages: number }>}
+ * Normalise the catalog filter contract shared by the page and the CSV export.
+ * The repository already expects null for "all", so the defaults live here once.
  */
-export async function list(filters = {}) {
-  const query = {
+function normalizeQuery(filters) {
+  return {
     q: filters.q ?? '',
     categoryId: filters.categoryId ?? null,
     manufacturerId: filters.manufacturerId ?? null,
@@ -215,11 +205,16 @@ export async function list(filters = {}) {
     dir: filters.dir ?? 'asc',
     referenceDate: referenceDate(),
   };
+}
 
-  // Status needs per-warehouse inputs, so the whole filtered candidate set is
-  // classified here. The catalog is a few hundred rows and this keeps one
-  // stockStatus rule for list, card and future alerts; pagination happens after
-  // the status filter so its count is exact.
+/**
+ * Apply every catalog filter, including the derived stock status and ROP.
+ *
+ * Status needs per-warehouse inputs, so the whole filtered candidate set is
+ * classified here. Pagination happens after the status filter so its count is
+ * exact; the export reuses the same unordered step without pagination.
+ */
+async function selectRows(query) {
   const candidates = await repository.listCatalogCandidates(query);
   const classified = candidates.map(classifyCatalogRow);
   const withPlanning = await attachReorderPoints(classified, {
@@ -238,17 +233,52 @@ export async function list(filters = {}) {
 
   filtered.sort((a, b) => compareCatalogRows(a, b, query.sort, query.dir));
 
-  const total = filtered.length;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const requested = Number.isInteger(filters.page) && filters.page > 0 ? filters.page : 1;
-  const page = Math.min(requested, pages);
-  const rows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((row) => {
+  return filtered.map((row) => {
     const visible = { ...row };
     delete visible.warehouseStates;
     return visible;
   });
+}
+
+/**
+ * One catalog page.
+ * @param {{
+ *   q?: string,
+ *   categoryId?: number | null,
+ *   manufacturerId?: number | null,
+ *   warehouseId?: number | null,
+ *   status?: 'all' | 'zero' | 'overstock' | 'below_min' | 'below_rop',
+ *   sort?: 'name' | 'sku' | 'qty' | 'value' | 'rop',
+ *   dir?: 'asc' | 'desc',
+ *   page?: number,
+ * }} [filters]
+ * @returns {Promise<{ rows: Array<Record<string, unknown>>, total: number, page: number, pages: number }>}
+ */
+export async function list(filters = {}) {
+  const query = normalizeQuery(filters);
+  const filtered = await selectRows(query);
+
+  const total = filtered.length;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const requested = Number.isInteger(filters.page) && filters.page > 0 ? filters.page : 1;
+  const page = Math.min(requested, pages);
+  const rows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return { rows, total, page, pages };
+}
+
+/**
+ * Every row matching the catalog filters, without pagination.
+ *
+ * Used by the CSV export so the file can never disagree with the screen about
+ * search, manufacturer, warehouse, status or sort order. Zero-balance rows are
+ * included exactly when the status filter keeps them (`all` and `zero`).
+ *
+ * @param {Parameters<typeof list>[0]} [filters]
+ * @returns {Promise<Array<Record<string, unknown>>>}
+ */
+export async function listAll(filters = {}) {
+  return selectRows(normalizeQuery(filters));
 }
 
 /**

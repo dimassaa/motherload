@@ -72,7 +72,9 @@ export function toCsv(rows, columns) {
  * Build the download filename required by the specification.
  *
  * @param {string} prefix report identifier such as `stock` or `movements`
- * @param {string | Date} date report date; a Date is reduced to its UTC day
+ * @param {string} date report date as a `YYYY-MM-DD` string; callers own the
+ *   timezone decision, so a `Date` is deliberately rejected instead of being
+ *   sliced in UTC and shifting a Minsk evening to the previous day
  * @returns {string} e.g. `motherload-stock-2026-11-22.csv`
  * @throws {TypeError} when the prefix or date is malformed
  */
@@ -81,11 +83,13 @@ export function csvFilename(prefix, date) {
     throw new TypeError('csvFilename: prefix must be lower-case kebab-case');
   }
 
-  const isoDate = date instanceof Date ? date.toISOString().slice(0, 10) : String(date);
-  const parsed = new Date(`${isoDate}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== isoDate) {
-    throw new TypeError('csvFilename: date must be a real YYYY-MM-DD date or a Date');
+  if (typeof date !== 'string') {
+    throw new TypeError('csvFilename: date must be a YYYY-MM-DD string');
+  }
+  const parsed = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
+    throw new TypeError('csvFilename: date must be a real YYYY-MM-DD date');
   }
 
-  return `motherload-${prefix}-${isoDate}.csv`;
+  return `motherload-${prefix}-${date}.csv`;
 }

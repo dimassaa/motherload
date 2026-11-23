@@ -33,13 +33,20 @@
     sort: filters.sort,
     dir: filters.dir,
   };
+
+  // §5.3: the export carries the current query, not a generic dump. The stock
+  // report reuses the catalog service, so the file matches this table exactly.
+  const exportHref = queryString('/reports/export/stock', paginationParams);
 %>
 <section aria-labelledby="catalog-title">
   <div class="page-header">
     <h1 id="catalog-title" class="page-header__title">Комплектующие</h1>
-    <% if (canManageCatalog) { %>
-      <a class="btn btn--primary" href="/admin/components/new">Добавить позицию</a>
-    <% } %>
+    <div class="page-header__actions">
+      <a class="btn btn--outline btn--sm" href="<%= exportHref %>">Экспорт CSV</a>
+      <% if (canManageCatalog) { %>
+        <a class="btn btn--primary" href="/admin/components/new">Добавить позицию</a>
+      <% } %>
+    </div>
   </div>
 
   <p class="page-header__meta">

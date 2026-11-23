@@ -11,24 +11,6 @@ const BASE_PATH = '/inventory';
 const QTY_MAX = 1_000_000_000;
 const COMMENT_MAX = 500;
 
-const MINSK_YEAR = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Europe/Minsk',
-  year: 'numeric',
-});
-
-/**
- * The screen identifier for a count.
- *
- * `inventory_counts` has no persisted document number, unlike receipts and
- * issues, so the UI derives a stable, human-readable label from the primary key
- * and the year the count started. The value is never written back or parsed.
- * @param {{ id: number, createdAt: Date }} count
- * @returns {string} e.g. `ИНВ-2026-0007`
- */
-function displayNumber(count) {
-  return `ИНВ-${MINSK_YEAR.format(count.createdAt)}-${String(count.id).padStart(4, '0')}`;
-}
-
 /** A malformed or vanished `:id` names no count, so it is a 404, not a 500. */
 function parseId(raw) {
   const id = Number(raw);
@@ -212,7 +194,7 @@ async function renderDetail(res, countId, state = {}) {
 
   const detail = await inventory.getCountDetail(countId);
   const decorated = decorateLines(detail.lines, filters);
-  const count = { ...detail.count, number: displayNumber(detail.count) };
+  const count = { ...detail.count, number: inventory.displayNumber(detail.count) };
   const role = res.locals.currentUser?.role;
 
   res.status(status).render('pages/inventory/show', {
@@ -254,7 +236,7 @@ export async function showList(req, res, next) {
     const { counts, capped } = await inventory.listCounts();
     const rows = counts.map((count) => ({
       ...count,
-      number: displayNumber(count),
+      number: inventory.displayNumber(count),
     }));
 
     res.render('pages/inventory/list', {

@@ -20,9 +20,26 @@ const FROZEN_WAREHOUSE_MESSAGE = 'На складе уже идёт инвент
 // time, and `toISOString()` would roll back to the previous day between 00:00
 // and 03:00 local time.
 const MINSK_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Minsk' });
+const MINSK_YEAR = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/Minsk',
+  year: 'numeric',
+});
 
 function todayInMinsk() {
   return MINSK_DATE.format(new Date());
+}
+
+/**
+ * The screen identifier for a count.
+ *
+ * `inventory_counts` has no persisted document number, unlike receipts and
+ * issues, so the UI derives a stable, human-readable label from the primary key
+ * and the year the count started. The value is never written back or parsed.
+ * @param {{ id: number, createdAt: Date }} count
+ * @returns {string} e.g. `ИНВ-2026-0007`
+ */
+export function displayNumber(count) {
+  return `ИНВ-${MINSK_YEAR.format(count.createdAt)}-${String(count.id).padStart(4, '0')}`;
 }
 
 /**

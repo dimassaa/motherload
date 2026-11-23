@@ -113,7 +113,6 @@ test('stock ui: /stock redirects and the navigation matches the routes that exis
   assert.match(storekeeperNav.text, /href="\/analytics\/abc"[\s\S]*?Аналитика/);
   assert.doesNotMatch(storekeeperNav.text, /href="\/analytics"/);
   assert.match(storekeeperNav.text, /href="\/alerts"/);
-  assert.match(storekeeperNav.text, /href="\/reports"/);
 
   const admin = await ctx.signIn('admin');
   const adminNav = await admin.agent.get('/dashboard');
@@ -121,7 +120,6 @@ test('stock ui: /stock redirects and the navigation matches the routes that exis
   assert.match(adminNav.text, /href="\/analytics\/abc"/);
   assert.doesNotMatch(adminNav.text, /href="\/analytics"/);
   assert.match(adminNav.text, /href="\/alerts"/);
-  assert.match(adminNav.text, /href="\/reports"/);
 
   const analyst = await ctx.signIn('analyst');
   const denied = await analyst.agent.get('/stock');
@@ -135,7 +133,12 @@ test('stock ui: /stock redirects and the navigation matches the routes that exis
   assert.doesNotMatch(analystNav.text, /href="\/analytics"/);
   assert.doesNotMatch(analystNav.text, /href="\/stock"/);
   assert.match(analystNav.text, /href="\/alerts"/);
-  assert.match(analystNav.text, /href="\/reports"/);
+
+  // Every role sees the reports hub; keeping it as a loop avoids three copies
+  // of the same navigation invariant drifting apart.
+  for (const nav of [storekeeperNav.text, adminNav.text, analystNav.text]) {
+    assert.match(nav, /href="\/reports"/);
+  }
 });
 
 test('stock ui: an out-of-range document id is a 404, not a database error', async () => {

@@ -217,7 +217,7 @@ test('reports page lists every CSV card and hides audit from non-admins', async 
   assert.match(adminPage.text, /\/reports\/export\/audit/);
 });
 
-test('stock export renders balances with Russian money and grouped quantities', async () => {
+test('stock export renders the catalog with Russian money and grouped quantities', async () => {
   const references = await seedReferences();
   await seedReportData(references);
 
@@ -225,15 +225,122 @@ test('stock export renders balances with Russian money and grouped quantities', 
   const response = await analyst.get('/reports/export/stock');
 
   assertCsvResponse(response, 'motherload-stock-2026-11-22.csv');
-  assert.match(response.text, /Артикул;Название;Категория;Склад;Остаток;Ед\./);
   assert.match(
     response.text,
-    /RPT-CPU;Процессор отчётный;Процессоры;Центральный склад;12;шт;1 234,50;14 814,00;5;100/,
+    /Артикул;Название;Категория;Производитель;Остаток;Ед\.;Минимум;ROP;Стоимость, BYN;Статус;Ниже ROP/,
+  );
+  assert.match(
+    response.text,
+    /RPT-CPU;Процессор отчётный;Процессоры;ТехноКорп;12;шт;5;5,00;14 814,00;В норме;нет/,
   );
 
   const storekeeper = await signIn(references.storekeeper);
   const byStorekeeper = await storekeeper.get('/reports/export/stock');
   assert.equal(byStorekeeper.status, 200);
+});
+
+test('catalog export button carries the current filters', async () => {
+  const references = await seedReferences();
+  await seedReportData(references);
+
+  const analyst = await signIn(references.analyst);
+  const page = await analyst.get(
+    `/components?q=RPT&categoryId=${references.categoryId}&manufacturerId=${references.manufacturerId}` +
+      `&warehouseId=${references.warehouse.id}&status=all&sort=value&dir=desc`,
+  );
+
+  assert.equal(page.status, 200);
+  assert.match(page.text, />Экспорт CSV</);
+  const expectedHref =
+    `/reports/export/stock?q=RPT&amp;categoryId=${references.categoryId}` +
+    `&amp;manufacturerId=${references.manufacturerId}` +
+    `&amp;warehouseId=${references.warehouse.id}` +
+    '&amp;status=all&amp;sort=value&amp;dir=desc';
+  assert.ok(page.text.includes(expectedHref), `page must link ${expectedHref}`);
+});
+
+test('stock export honors catalog search, manufacturer, warehouse and status', async () => {
+  const references = await seedReferences();
+  const { rows: secondManufacturer } = await query(
+    `insert into manufacturers (name, country) values ('ВторойПроизводитель', 'Беларусь') returning id`,
+  );
+  const { rows: storage } = await query(
+    `insert into categories (name, slug) values ('Накопители', 'storage') returning id`,
+  );
+  const gomel = await createWarehouseFactory({
+    code: 'WH-GOM',
+    name: 'Региональный склад Гомель',
+    city: 'Гомель',
+  });
+
+  const alpha = await createComponent(references, {
+    sku: 'CAT-ALPHA',
+    name: 'Позиция CAT-ALPHA',
+    minStock: 1,
+  });
+  await insertStock({
+    componentId: alpha.id,
+    warehouseId: references.warehouse.id,
+    qty: 5,
+    unitCost: '100.0000',
+  });
+
+  await createComponent(references, {
+    sku: 'CAT-BETA',
+    name: 'Позиция CAT-BETA',
+    categoryId: storage[0].id,
+    manufacturerId: secondManufacturer[0].id,
+    minStock: 2,
+  });
+
+  const gamma = await createComponent(references, {
+    sku: 'CAT-GAMMA',
+    name: 'Позиция CAT-GAMMA',
+    manufacturerId: secondManufacturer[0].id,
+    minStock: 1,
+  });
+  await insertStock({
+    componentId: gamma.id,
+    warehouseId: gomel.id,
+    qty: 3,
+    unitCost: '50.0000',
+  });
+
+  const analyst = await signIn(references.analyst);
+
+  const bySearch = await analyst.get('/reports/export/stock?q=ALPHA');
+  assertCsvResponse(bySearch, 'motherload-stock-2026-11-22.csv');
+  assert.match(bySearch.text, /CAT-ALPHA/);
+  assert.doesNotMatch(bySearch.text, /CAT-BETA|CAT-GAMMA/);
+
+  const byManufacturer = await analyst.get(
+    `/reports/export/stock?manufacturerId=${secondManufacturer[0].id}`,
+  );
+  assert.match(byManufacturer.text, /CAT-BETA/);
+  assert.match(byManufacturer.text, /CAT-GAMMA/);
+  assert.doesNotMatch(byManufacturer.text, /CAT-ALPHA/);
+
+  const zeroOnly = await analyst.get('/reports/export/stock?status=zero');
+  assert.match(zeroOnly.text, /CAT-BETA;Позиция CAT-BETA;Накопители;ВторойПроизводитель;0;шт;/);
+  assert.doesNotMatch(zeroOnly.text, /CAT-ALPHA|CAT-GAMMA/);
+
+  const allStatuses = await analyst.get('/reports/export/stock?status=all');
+  for (const sku of ['CAT-ALPHA', 'CAT-BETA', 'CAT-GAMMA']) {
+    assert.match(allStatuses.text, new RegExp(sku));
+  }
+
+  const gomelOnly = await analyst.get(`/reports/export/stock?warehouseId=${gomel.id}&status=all`);
+  assert.match(gomelOnly.text, /CAT-GAMMA;Позиция CAT-GAMMA;Процессоры;ВторойПроизводитель;3;шт;/);
+  assert.match(gomelOnly.text, /CAT-ALPHA;Позиция CAT-ALPHA;Процессоры;ТехноКорп;0;шт;/);
+});
+
+test('stock export rejects a malformed filter instead of exporting everything', async () => {
+  const references = await seedReferences();
+  const analyst = await signIn(references.analyst);
+
+  const response = await analyst.get('/reports/export/stock?warehouseId=abc');
+  assert.equal(response.status, 400);
+  assert.match(response.text, /Данные заполнены неверно/);
 });
 
 test('movements export respects the date range and keeps the ledger readable', async () => {
@@ -274,6 +381,18 @@ test('movements export respects the date range and keeps the ledger readable', a
   assertCsvResponse(defaultRange, 'motherload-movements-2026-11-22.csv');
   assert.match(defaultRange.text, /РС-2026-0007/);
   assert.doesNotMatch(defaultRange.text, /РС-2026-0008/);
+
+  const reversed = await analyst.get(
+    '/reports/export/movements?dateFrom=2026-11-21&dateTo=2026-11-19',
+  );
+  assert.equal(reversed.status, 400);
+  assert.match(reversed.text, /Дата начала не может быть позже даты окончания/);
+
+  const impossible = await analyst.get(
+    '/reports/export/movements?dateFrom=2026-13-45&dateTo=2026-11-21',
+  );
+  assert.equal(impossible.status, 400);
+  assert.match(impossible.text, /Укажите дату в формате/);
 });
 
 test('ABC, XYZ and reorder exports reuse the analytics read models', async () => {

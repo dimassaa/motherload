@@ -1,12 +1,11 @@
 import { pool } from '../db/pool.js';
 
 /**
- * Read models for CSV reports.
+ * Read model for the date-filtered CSV movement ledger.
  *
- * Analytics, inventory and audit reports reuse their own services and
- * repositories. Only two datasets have no other read model: the per-warehouse
- * balance list and the date-filtered movement ledger. Keeping their SQL here
- * preserves the repository boundary instead of leaking queries into the report
+ * ABC/XYZ/reorder, the inventory act and the catalog export reuse their own
+ * services and repositories. The movement export is the only dataset without
+ * another read model, so its SQL stays here instead of leaking into the report
  * service.
  */
 
@@ -16,62 +15,6 @@ const DISPLAY_ZONE = 'Europe/Minsk';
 
 function db(client) {
   return client ?? pool;
-}
-
-/**
- * Current balances per component and warehouse.
- *
- * A pair is included only when the ledger says something remains: zero rows
- * would turn the export into a full cross product without adding information.
- *
- * @param {{ warehouseId?: number|null, categoryId?: number|null }} [filters]
- * @returns {Promise<Array<{
- *   componentId: number, sku: string, name: string, unit: string,
- *   categoryName: string|null, warehouseCode: string, warehouseName: string,
- *   qty: number, value: string, avgCost: string|null,
- *   minStock: number, maxStock: number|null
- * }>>}
- */
-export async function listStockBalances({ warehouseId = null, categoryId = null } = {}) {
-  const { rows } = await db().query(
-    `select
-       c.id as component_id,
-       c.sku,
-       c.name,
-       c.unit,
-       cat.name as category_name,
-       w.code as warehouse_code,
-       w.name as warehouse_name,
-       vw.qty,
-       vw.value,
-       vw.avg_cost,
-       vw.min_stock,
-       vw.max_stock
-     from v_component_warehouse_stock vw
-     join components c on c.id = vw.component_id
-     join warehouses w on w.id = vw.warehouse_id
-     left join categories cat on cat.id = c.category_id
-     where vw.qty > 0
-       and ($1::int is null or vw.warehouse_id = $1)
-       and ($2::int is null or c.category_id = $2)
-     order by c.name, c.id, w.name, w.id`,
-    [warehouseId, categoryId],
-  );
-
-  return rows.map((row) => ({
-    componentId: row.component_id,
-    sku: row.sku,
-    name: row.name,
-    unit: row.unit,
-    categoryName: row.category_name ?? null,
-    warehouseCode: row.warehouse_code,
-    warehouseName: row.warehouse_name,
-    qty: row.qty,
-    value: row.value,
-    avgCost: row.avg_cost ?? null,
-    minStock: row.min_stock,
-    maxStock: row.max_stock,
-  }));
 }
 
 /**

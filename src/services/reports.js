@@ -6,7 +6,8 @@ import { listAuditEntries } from '../repositories/audit.js';
 import * as reportRepository from '../repositories/reports.js';
 import * as audit from './audit.js';
 import { getAbc, getReorder, getXyz } from './analytics.js';
-import { getCountDetail } from './inventory.js';
+import * as catalog from './catalog.js';
+import { displayNumber, getCountDetail } from './inventory.js';
 
 /**
  * CSV report builders.
@@ -41,11 +42,6 @@ const MINSK_DATE = new Intl.DateTimeFormat('en-CA', {
   day: '2-digit',
 });
 
-const MINSK_YEAR = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Europe/Minsk',
-  year: 'numeric',
-});
-
 const MINSK_DATE_TIME = new Intl.DateTimeFormat('ru-BY', {
   timeZone: 'Europe/Minsk',
   year: 'numeric',
@@ -67,6 +63,17 @@ const REORDER_STATUS_LABELS = Object.freeze({
   below_rop: 'Ниже точки заказа',
   ok: 'В норме',
 });
+
+const CATALOG_STATUS_LABELS = Object.freeze({
+  zero: 'Нет остатка',
+  below_min: 'Ниже минимума',
+  overstock: 'Избыток',
+  ok: 'В норме',
+});
+
+const CATALOG_STATUSES = new Set(['all', 'zero', 'overstock', 'below_min', 'below_rop']);
+const CATALOG_SORTS = new Set(['name', 'sku', 'qty', 'value', 'rop']);
+const SORT_DIRECTIONS = new Set(['asc', 'desc']);
 
 function todayInMinsk() {
   return MINSK_DATE.format(new Date());
@@ -124,9 +131,41 @@ function readOptionalId(value, label) {
 
 function normalizeFilters(filters = {}) {
   return {
+    q: typeof filters.q === 'string' ? filters.q.trim() : '',
     warehouseId: readOptionalId(filters.warehouseId, 'Склад'),
     categoryId: readOptionalId(filters.categoryId, 'Категория'),
+    manufacturerId: readOptionalId(filters.manufacturerId, 'Производитель'),
+    status: readCatalogStatus(filters.status),
+    sort: readCatalogSort(filters.sort),
+    dir: readSortDirection(filters.dir),
+    dateFrom: filters.dateFrom,
+    dateTo: filters.dateTo,
+    countId: filters.countId,
   };
+}
+
+function readCatalogStatus(value) {
+  const status = value ?? 'all';
+  if (!CATALOG_STATUSES.has(status)) {
+    throw new ValidationError('Некорректный фильтр остатка.');
+  }
+  return status;
+}
+
+function readCatalogSort(value) {
+  const sort = value ?? 'name';
+  if (!CATALOG_SORTS.has(sort)) {
+    throw new ValidationError('Некорректная сортировка отчёта.');
+  }
+  return sort;
+}
+
+function readSortDirection(value) {
+  const dir = value ?? 'asc';
+  if (!SORT_DIRECTIONS.has(dir)) {
+    throw new ValidationError('Некорректное направление сортировки.');
+  }
+  return dir;
 }
 
 /**
@@ -174,32 +213,32 @@ export function defaultMovementRange() {
 /* --------------------------------------------------------------- Builders */
 
 async function buildStock(filters) {
-  const rows = await reportRepository.listStockBalances(filters);
+  const rows = await catalog.listAll(filters);
   const columns = [
     { key: 'sku', label: 'Артикул' },
     { key: 'name', label: 'Название' },
     { key: 'categoryName', label: 'Категория' },
-    { key: 'warehouseName', label: 'Склад' },
+    { key: 'manufacturerName', label: 'Производитель' },
     { key: 'qty', label: 'Остаток', format: (row) => formatQty(row.qty) },
     { key: 'unit', label: 'Ед.' },
-    {
-      key: 'avgCost',
-      label: 'Себестоимость, BYN',
-      format: (row) => (row.avgCost === null ? '' : formatMoney(row.avgCost)),
-    },
-    { key: 'value', label: 'Стоимость, BYN', format: (row) => formatMoney(row.value) },
     { key: 'minStock', label: 'Минимум', format: (row) => formatQty(row.minStock) },
     {
-      key: 'maxStock',
-      label: 'Максимум',
-      format: (row) => (row.maxStock === null ? '' : formatQty(row.maxStock)),
+      key: 'rop',
+      label: 'ROP',
+      format: (row) => (row.rop === null ? '' : formatDecimal(row.rop, 2)),
     },
+    { key: 'value', label: 'Стоимость, BYN', format: (row) => formatMoney(row.value) },
+    {
+      key: 'status',
+      label: 'Статус',
+      format: (row) => CATALOG_STATUS_LABELS[row.status] ?? row.status,
+    },
+    { key: 'belowRop', label: 'Ниже ROP', format: (row) => (row.belowRop ? 'да' : 'нет') },
   ];
 
   return {
     filename: csvFilename('stock', referenceDate()),
     content: toCsv(rows, columns),
-    auditFilters: compactFilters(filters),
   };
 }
 
@@ -331,11 +370,6 @@ async function buildReorder(filters) {
   };
 }
 
-function displayInventoryNumber(count) {
-  const year = MINSK_YEAR.format(count.createdAt);
-  return `ИНВ-${year}-${String(count.id).padStart(4, '0')}`;
-}
-
 async function buildInventory(filters) {
   const countId = Number(filters.countId);
   if (!Number.isSafeInteger(countId) || countId < 1) {
@@ -343,7 +377,7 @@ async function buildInventory(filters) {
   }
 
   const { count, lines } = await getCountDetail(countId);
-  const documentNumber = displayInventoryNumber(count);
+  const documentNumber = displayNumber(count);
   const rows = lines.map((line) => ({
     ...line,
     documentNumber,
@@ -438,6 +472,22 @@ function compactFilters(filters) {
   return compact;
 }
 
+/**
+ * Catalog filters as the user sent them.
+ *
+ * The page button always sends the full query, while a bare
+ * `/reports/export/stock` sends nothing; recording only supplied values keeps
+ * the audit row readable and avoids claiming defaults the user never chose.
+ */
+function catalogAuditFilters(filters = {}) {
+  const compact = {};
+  for (const key of ['q', 'categoryId', 'manufacturerId', 'warehouseId', 'status', 'sort', 'dir']) {
+    const value = filters[key];
+    if (value !== undefined && value !== null && value !== '') compact[key] = value;
+  }
+  return compact;
+}
+
 const BUILDERS = Object.freeze({
   stock: buildStock,
   movements: buildMovements,
@@ -453,8 +503,13 @@ const BUILDERS = Object.freeze({
  *
  * @param {'stock'|'movements'|'abc'|'xyz'|'reorder'|'inventory'|'audit'} type
  * @param {{
+ *   q?: string,
  *   warehouseId?: number|null,
  *   categoryId?: number|null,
+ *   manufacturerId?: number|null,
+ *   status?: 'all'|'zero'|'overstock'|'below_min'|'below_rop',
+ *   sort?: 'name'|'sku'|'qty'|'value'|'rop',
+ *   dir?: 'asc'|'desc',
  *   dateFrom?: string,
  *   dateTo?: string,
  *   countId?: number,
@@ -474,12 +529,8 @@ async function exportReport(type, filters = {}, ctx = {}) {
   }
 
   const preparedFilters = normalizeFilters(filters);
-  const { filename, content, auditFilters } = await BUILDERS[type]({
-    ...preparedFilters,
-    dateFrom: filters.dateFrom,
-    dateTo: filters.dateTo,
-    countId: filters.countId,
-  });
+  const result = await BUILDERS[type](preparedFilters);
+  const auditFilters = type === 'stock' ? catalogAuditFilters(filters) : result.auditFilters;
 
   await audit.record({
     userId: user?.id ?? null,
@@ -490,7 +541,7 @@ async function exportReport(type, filters = {}, ctx = {}) {
     req: ctx.req,
   });
 
-  return { filename, content };
+  return { filename: result.filename, content: result.content };
 }
 
 export { exportReport as export };
