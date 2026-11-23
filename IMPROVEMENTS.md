@@ -2,6 +2,26 @@
 
 Пока пусто. Некритичные находки добавляются сюда по мере работы.
 
+## 2026-11-23, Task 11 — freeze check runs before supplier/component validation
+
+`postReceipt` checks the inventory freeze before it checks that the supplier and
+components are active. On a frozen warehouse an archived component therefore
+returns 409 «На складе идёт инвентаризация» instead of the 400 that names the
+real input problem. Deferred minor: the 409 is still true and actionable, and
+reordering only decides which error wins. Revisit when the receipt form (Task 14)
+defines the precedence it wants to show.
+
+## 2026-11-23, Task 11 — duplicate component lines produce duplicate batches
+
+`postReceipt` accepts the same `componentId` twice in one document and creates a
+separate `stock_batches` row per line. Nothing breaks — the ledger and FIFO stay
+consistent — but the receipt form can produce two batches for one purchase when
+the operator adds a repeated row by accident, which splits the cost history and
+makes the batch list harder to read. Owner: Task 14 (receipt form). Options:
+merge repeated lines in the form, reject duplicates with a 400, or document the
+behaviour deliberately. Decide when the form is built, since that is where the
+user-facing contract becomes visible.
+
 ## 2026-11-23, Task 5 — RBAC, users, profile, audit
 
 - `GET /login` returns 404: only `POST /login` is routed. A user who types the
