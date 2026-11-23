@@ -145,6 +145,9 @@ for (const form of document.querySelectorAll('form[data-inventory-confirm]')) {
   });
 }
 
-document.querySelector('[data-inventory-print]')?.addEventListener('click', () => {
+document.querySelector('[data-inventory-print]')?.addEventListener('click', (event) => {
+  // The control is a plain link to the act so it still does something without
+  // JavaScript; with scripting it prints instead of jumping.
+  event.preventDefault();
   window.print();
 });

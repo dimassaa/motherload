@@ -320,8 +320,9 @@ export async function markCancelled(client, countId) {
 // ------------------------------------------------------------ Read models for UI
 
 // The list is the operator's working set, not a historical archive. 200 rows
-// keep the page cheap; older counts remain reachable by direct link.
-const LIST_LIMIT = 200;
+// keep the page cheap; older counts remain reachable by direct link. The UI
+// labels a capped page as "last 200" so it never claims to show a total.
+export const COUNT_LIST_LIMIT = 200;
 
 const COUNT_COLUMNS = `
   ic.id, ic.warehouse_id, ic.status, ic.created_at, ic.submitted_at,
@@ -375,7 +376,7 @@ export async function listCountViews() {
      ${COUNT_JOINS}
      order by ic.created_at desc, ic.id desc
      limit $1`,
-    [LIST_LIMIT],
+    [COUNT_LIST_LIMIT],
   );
 
   return rows.map(mapCount);

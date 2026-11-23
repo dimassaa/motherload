@@ -229,7 +229,7 @@ async function renderDetail(res, countId, state = {}) {
     unfilledIds,
     canEdit: count.status === 'draft',
     canApprove: count.status === 'submitted' && role === 'admin',
-    canCancel: count.status === 'draft' || count.status === 'submitted',
+    canCancel: count.status === 'draft' || (count.status === 'submitted' && role === 'admin'),
     bodyClass: 'inventory-detail-page',
   });
 }
@@ -251,14 +251,16 @@ async function renderNew(res, { status = 200, values, fieldErrors = {}, errors =
 /** `GET /inventory` — counts with status, actors and discrepancy totals. */
 export async function showList(req, res, next) {
   try {
-    const counts = (await inventory.listCounts()).map((count) => ({
+    const { counts, capped } = await inventory.listCounts();
+    const rows = counts.map((count) => ({
       ...count,
       number: displayNumber(count),
     }));
 
     res.render('pages/inventory/list', {
       title: 'Инвентаризация — Motherload',
-      counts,
+      counts: rows,
+      capped,
     });
   } catch (error) {
     next(error);

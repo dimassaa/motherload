@@ -43,9 +43,13 @@
     </div>
     <div class="card-actions">
       <a class="btn btn--ghost" href="/inventory">← К списку</a>
-      <button class="btn btn--outline" type="button" data-inventory-print>Печать акта</button>
+      <a class="btn btn--outline no-print" href="#inventory-act" data-inventory-print>Печать акта</a>
     </div>
   </div>
+
+  <p class="form-field__hint inventory-screen-only">
+    Без JavaScript нажмите Ctrl+P: на печать выводится только акт расхождений.
+  </p>
 
   <div class="detail-grid inventory-meta inventory-screen-only">
     <div class="detail-item">
@@ -205,6 +209,9 @@
                       name="lines[<%= row.formIndex %>][componentId]"
                       value="<%= row.line.componentId %>"
                     >
+                    <label class="visually-hidden" for="actual-<%= row.line.componentId %>">
+                      Фактическое количество: <%= row.line.sku %>
+                    </label>
                     <input
                       class="form-field__input inventory-table__input"
                       id="actual-<%= row.line.componentId %>"
@@ -215,7 +222,6 @@
                       value="<%= fieldValue(row, 'actualQty') %>"
                       data-inventory-actual
                       data-expected="<%= row.line.expectedQty %>"
-                      aria-label="Фактическое количество: <%= row.line.sku %>"
                       <%- errorActual ? `aria-invalid="true" aria-describedby="actual-error-${row.line.componentId}"` : '' %>
                     >
                     <% if (errorActual) { %>
@@ -233,6 +239,9 @@
                     </span>
                   </td>
                   <td class="table__cell inventory-table__comment">
+                    <label class="visually-hidden" for="comment-<%= row.line.componentId %>">
+                      Комментарий: <%= row.line.sku %>
+                    </label>
                     <input
                       class="form-field__input inventory-table__input"
                       id="comment-<%= row.line.componentId %>"
@@ -241,7 +250,6 @@
                       maxlength="500"
                       autocomplete="off"
                       value="<%= fieldValue(row, 'comment') %>"
-                      aria-label="Комментарий: <%= row.line.sku %>"
                       <%- errorComment ? `aria-invalid="true" aria-describedby="comment-error-${row.line.componentId}"` : '' %>
                     >
                     <% if (errorComment) { %>
@@ -277,7 +285,8 @@
 
       <p class="form-field__hint">
         Пустое поле означает «не введено», а не ноль. Отправка на проверку потребует заполнить факт
-        во всех строках.
+        во всех строках. «Заполнить по учёту» и «Очистить» действуют только на видимые строки —
+        снимите фильтр, чтобы обработать весь снимок.
       </p>
 
       <div class="form-actions">
@@ -388,8 +397,23 @@
       итоговое отклонение: <%= summary.netQty > 0 ? '+' : '' %><%= formatQty(summary.netQty) %> шт.
     </p>
 
+    <% if (summary.enteredCount < summary.lineCount) { %>
+      <p class="inventory-act__warning">
+        Факт введён не по всем строкам: <%= summary.enteredCount %> из <%= summary.lineCount %>.
+        Акт неполный — незаполненные позиции в него не попали.
+      </p>
+    <% } %>
+
     <% if (discrepancies.length === 0) { %>
-      <p class="inventory-act__empty">Расхождений нет: фактические количества совпадают с учётными.</p>
+      <% if (summary.enteredCount < summary.lineCount) { %>
+        <p class="inventory-act__empty">
+          Пока расхождений не видно, но проверка не завершена: заполните факт по всем строкам.
+        </p>
+      <% } else { %>
+        <p class="inventory-act__empty">
+          Расхождений нет: фактические количества совпадают с учётными.
+        </p>
+      <% } %>
     <% } else { %>
       <div class="table-wrap">
         <table class="table">

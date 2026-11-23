@@ -1737,6 +1737,14 @@ a.app-header__identity:hover {
   margin-bottom: var(--space-12);
 }
 
+.inventory-act__warning {
+  margin-bottom: var(--space-12);
+  padding: var(--space-8) var(--space-12);
+  border-left: 3px solid var(--color-warning);
+  color: var(--color-warning-ink);
+  font-size: 13px;
+}
+
 .inventory-act__empty {
   padding: var(--space-16) 0;
 }

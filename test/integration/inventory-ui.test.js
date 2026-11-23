@@ -126,7 +126,7 @@ test('inventory ui: storekeeper creates a count and sees snapshot lines', async 
   assert.match(list.text, /ИНВ-\d{4}-\d{4}/);
   assert.match(list.text, /Тестовый склад/);
   assert.match(list.text, /Черновик/);
-  assert.match(list.text, /data-discrepancies="0"/);
+  assert.match(list.text, /inventory-list__discrepancies">\s*0/);
 });
 
 test('inventory ui: storekeeper sees submit but not approve; admin sees approve', async () => {
@@ -232,6 +232,8 @@ test('inventory ui: bulk-fill hooks and actual difference are rendered', async (
   assert.match(page.text, /data-inventory-clear/);
   assert.match(page.text, /data-expected="5"/);
   assert.match(page.text, /\/js\/inventory-form\.js/);
+  assert.match(page.text, /действуют только на видимые строки/);
+  assert.match(page.text, /class="visually-hidden" for="actual-/);
   assert.match(page.text, /data-difference="3"/);
   assert.match(page.text, /data-difference="0"/);
   assert.match(page.text, /\+3/);
@@ -264,6 +266,7 @@ test('inventory ui: print act lists only discrepancies', async () => {
   assert.equal(page.status, 200);
   assert.match(page.text, /Акт расхождений/);
   assert.match(page.text, /Печать акта/);
+  assert.match(page.text, /href="#inventory-act" data-inventory-print/);
 
   const act = page.text.slice(page.text.indexOf('id="inventory-act"'));
   assert.match(act, /CPU-TEST-01/);
@@ -321,4 +324,164 @@ test('inventory ui: saving a draft redirects back with a success toast', async (
   );
   assert.equal(rows[0].actual_qty, 4);
   assert.equal(rows[0].difference, -1);
+});
+
+test('inventory ui: saving under a filter keeps the hidden rows', async () => {
+  const ctx = await seedInventory();
+  const other = await addComponent(ctx, {
+    sku: 'RAM-HIDDEN-02',
+    name: 'Память скрытая фильтром',
+  });
+  await receive(ctx, 5);
+  await receive(ctx, 5, '100.0000', other.id);
+  const { countId } = await create(ctx);
+
+  const { agent } = await signInAs('storekeeper', 'sklad-ui@test.by');
+  const filtered = await agent.get(`/inventory/${countId}?q=CPU-TEST-01`);
+  assert.equal(filtered.status, 200);
+  assert.match(filtered.text, /CPU-TEST-01/);
+  assert.doesNotMatch(filtered.text, /data-sku="RAM-HIDDEN-02"/);
+
+  // The non-matching line is not lost: it travels as hidden inputs with its
+  // original form index so the save cannot silently shrink the snapshot.
+  assert.match(
+    filtered.text,
+    new RegExp(`name="lines\\[1\\]\\[componentId\\]"\\s+value="${other.id}"`),
+  );
+
+  const token = await getCsrf(agent, `/inventory/${countId}`);
+  const saved = await agent
+    .post(`/inventory/${countId}/lines`)
+    .type('form')
+    .send({
+      [`lines[0][componentId]`]: String(ctx.componentId),
+      [`lines[0][actualQty]`]: '7',
+      [`lines[0][comment]`]: 'Видимая строка',
+      [`lines[1][componentId]`]: String(other.id),
+      [`lines[1][actualQty]`]: '4',
+      [`lines[1][comment]`]: 'Скрытая строка',
+      _csrf: token,
+    });
+
+  assert.equal(saved.status, 302);
+  const { rows } = await query(
+    `select component_id, actual_qty, difference, comment
+     from inventory_lines where count_id = $1 order by component_id`,
+    [countId],
+  );
+  assert.equal(rows.length, 2, 'the filtered save must not lose or duplicate a line');
+  assert.deepEqual(
+    rows.map((row) => [row.component_id, row.actual_qty, row.difference, row.comment]),
+    [
+      [ctx.componentId, 7, 2, 'Видимая строка'],
+      [other.id, 4, -1, 'Скрытая строка'],
+    ],
+  );
+});
+
+test('inventory ui: submit with an empty line marks the row and the summary', async () => {
+  const ctx = await seedInventory();
+  await receive(ctx, 5);
+  const { countId } = await create(ctx);
+
+  const { agent } = await signInAs('storekeeper', 'sklad-ui@test.by');
+  const token = await getCsrf(agent, `/inventory/${countId}`);
+  const response = await agent
+    .post(`/inventory/${countId}/submit`)
+    .type('form')
+    .send({ _csrf: token });
+
+  assert.equal(response.status, 400);
+  assert.match(response.text, /Заполните фактическое количество/);
+  assert.match(
+    response.text,
+    new RegExp(`aria-invalid="true" aria-describedby="actual-error-${ctx.componentId}"`),
+  );
+  assert.match(
+    response.text,
+    new RegExp(`id="actual-error-${ctx.componentId}"[^>]*>\\s*Введите фактическое количество`),
+  );
+});
+
+test('inventory ui: cancel is a draft action for storekeepers and an admin action after submit', async () => {
+  const ctx = await seedInventory();
+  await receive(ctx, 5);
+
+  const storekeeper = await signInAs('storekeeper', 'sklad-ui@test.by');
+  const draft = await create(ctx);
+  let token = await getCsrf(storekeeper.agent, `/inventory/${draft.countId}`);
+  let cancelled = await storekeeper.agent
+    .post(`/inventory/${draft.countId}/cancel`)
+    .type('form')
+    .send({ _csrf: token });
+
+  assert.equal(cancelled.status, 302);
+  assert.equal(cancelled.headers.location, `/inventory/${draft.countId}`);
+  assert.equal(await countStatus(draft.countId), 'cancelled');
+  const flash = await storekeeper.agent.get(`/inventory/${draft.countId}`);
+  assert.match(flash.text, /Инвентаризация отменена/);
+
+  // A submitted count is an administrator's review. The button disappears for
+  // the storekeeper and the server refuses the direct post.
+  const submitted = await create(ctx);
+  await submitFilled(submitted.countId, [{ componentId: ctx.componentId, actualQty: 5 }]);
+  const submittedPage = await storekeeper.agent.get(`/inventory/${submitted.countId}`);
+  assert.doesNotMatch(submittedPage.text, new RegExp(`/inventory/${submitted.countId}/cancel`));
+
+  token = await getCsrf(storekeeper.agent, '/inventory/new');
+  const forbidden = await storekeeper.agent
+    .post(`/inventory/${submitted.countId}/cancel`)
+    .type('form')
+    .send({ _csrf: token });
+  assert.equal(forbidden.status, 403);
+  assert.equal(await countStatus(submitted.countId), 'submitted');
+
+  const admin = await signInAs('admin', 'admin-cancel@test.by');
+  token = await getCsrf(admin.agent, `/inventory/${submitted.countId}`);
+  cancelled = await admin.agent
+    .post(`/inventory/${submitted.countId}/cancel`)
+    .type('form')
+    .send({ _csrf: token });
+  assert.equal(cancelled.status, 302);
+  assert.equal(await countStatus(submitted.countId), 'cancelled');
+
+  const analyst = await signInAs('analyst', 'analyst-cancel@test.by');
+  token = await getCsrf(analyst.agent, '/dashboard');
+  const denied = await analyst.agent
+    .post(`/inventory/${submitted.countId}/cancel`)
+    .type('form')
+    .send({ _csrf: token });
+  assert.equal(denied.status, 403);
+});
+
+test('inventory ui: draft act does not claim there are no discrepancies before facts are entered', async () => {
+  const ctx = await seedInventory();
+  await receive(ctx, 5);
+  const { countId } = await create(ctx);
+
+  const { agent } = await signInAs('storekeeper', 'sklad-ui@test.by');
+  const page = await agent.get(`/inventory/${countId}`);
+
+  assert.equal(page.status, 200);
+  assert.match(page.text, /Факт введён не по всем строкам/);
+  assert.match(page.text, /Акт неполный/);
+  assert.doesNotMatch(page.text, /Расхождений нет/);
+});
+
+test('inventory ui: a capped list is labelled as the last 200, not as a total', async () => {
+  const ctx = await seedInventory();
+  await query(
+    `insert into inventory_counts (warehouse_id, status, started_by, created_at)
+     select $1, 'cancelled', $2, timestamptz '2026-01-01 00:00:00+03' + (g || ' minutes')::interval
+     from generate_series(1, 201) as g`,
+    [ctx.warehouseId, ctx.userId],
+  );
+
+  const { agent } = await signInAs('storekeeper', 'sklad-ui@test.by');
+  const list = await agent.get('/inventory');
+
+  assert.equal(list.status, 200);
+  assert.match(list.text, /Последние 200 инвентаризаций/);
+  assert.doesNotMatch(list.text, /Всего инвентаризаций/);
+  assert.equal((list.text.match(/inventory-list__discrepancies/g) ?? []).length, 200);
 });
