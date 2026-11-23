@@ -69,12 +69,23 @@ export function createApp() {
         useDefaults: false,
         directives: CSP_DIRECTIVES,
       },
-      // HSTS is meaningless (and ignored) over plain HTTP; enable it only when
-      // this process actually terminates TLS itself.
-      hsts: env.https ? { maxAge: 15552000, includeSubDomains: true } : false,
+      // HSTS is driven by the effective request protocol below, not by whether
+      // this process terminates TLS: behind a reverse proxy `req.secure` is true
+      // when the proxy forwards `X-Forwarded-Proto: https`. Helmet must not also
+      // emit the header, otherwise the response would carry it twice.
+      hsts: false,
       frameguard: { action: 'deny' },
     }),
   );
+
+  // One HSTS header for both deployment shapes: direct TLS and a trusted proxy.
+  // 180 days plus subdomains matches the value Helmet used for direct TLS.
+  app.use((req, res, next) => {
+    if (req.secure) {
+      res.setHeader('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
+    }
+    next();
+  });
 
   app.use(pinoHttp({ logger }));
 
@@ -111,6 +122,9 @@ export function createApp() {
       // cookie lifetime still bounds a forgotten browser session.
       rolling: true,
       cookie: { ...sessionCookieOptions(), maxAge: SESSION_COOKIE_MAX_AGE_MS },
+      // Tell express-session to trust `X-Forwarded-Proto` exactly when a proxy
+      // is configured; otherwise a client could force a Secure cookie over HTTP.
+      proxy: env.trustProxy !== false,
     }),
   );
   app.use(attachUser);

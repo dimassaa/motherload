@@ -1,10 +1,8 @@
 /**
  * Validation helpers shared by the SSR controllers.
  *
- * Zod is the single source of truth for field rules, but the two callers need
- * different outcomes: a form has to re-render with the values the user typed,
- * while a JSON endpoint only needs the standard 400 response. `parseOrThrow`
- * serves the first case and `validateBody` the second.
+ * Zod is the single source of truth for field rules; `parseOrThrow` is the
+ * throwing variant used when the route has no submitted form to repopulate.
  */
 
 /**
@@ -41,31 +39,4 @@ export function messagesFromZod(error) {
  */
 export function parseOrThrow(schema, input) {
   return schema.parse(input);
-}
-
-/**
- * Validate `req.body` against a Zod schema. Replacement of `req.body` with the
- * parsed value applies the schema's trimming and normalisation once, so the
- * handler never re-implements it.
- *
- * NOTE: no route uses this middleware yet. The SSR controllers must re-render
- * the submitted form with per-field errors, so they parse explicitly and render
- * themselves. This is the generic variant reserved for the Task 12 JSON API,
- * where a failed body maps to the shared 400 response instead of a form.
- * @param {import('zod').ZodType} schema
- * @returns {import('express').RequestHandler}
- */
-export function validateBody(schema) {
-  return function bodyValidator(req, res, next) {
-    const result = schema.safeParse(req.body ?? {});
-
-    if (!result.success) {
-      res.locals.formErrors = messagesFromZod(result.error);
-      next(result.error);
-      return;
-    }
-
-    req.body = result.data;
-    next();
-  };
 }

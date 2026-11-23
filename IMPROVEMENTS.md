@@ -26,6 +26,20 @@ The component card chart includes the reference month (June–November for
 windows are defensible, but the screens do not explain the difference. Align the
 labels or reuse one window helper before the two figures are shown side by side.
 
+### 2026-11-23, final-fixes — the consumption card still says the chart is coming
+
+The component card now renders real six-month bars, but the card text still ends
+with «График появится вместе с аналитикой.» Left untouched because the
+replenishment fix was the approved scope; deleting one stale sentence is the
+whole change.
+
+### 2026-11-23, final-fixes — `likePattern` is defined in two repositories
+
+`components-read.js` and `stock.js` each own an identical LIKE-escaping helper;
+the admin repository now imports the one from `components-read.js`. A shared
+`sql.js` helper would remove the remaining duplicate, but that touches the stock
+document repository outside the review-fix scope.
+
 ### 2026-11-23, Task 19 — a catalog row below ROP can look healthy by totals
 
 The catalog row shows the summed balance and summed ROP, while `below_rop`

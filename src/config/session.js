@@ -13,7 +13,11 @@ export function sessionCookieOptions() {
   return {
     httpOnly: true,
     sameSite: 'lax',
-    secure: env.https,
+    // `'auto'` lets express-session mark the cookie Secure when the request is
+    // secure, including a TLS-terminating proxy that sends
+    // `X-Forwarded-Proto: https`. With no trusted proxy there is no header worth
+    // trusting, so the cookie stays plain to keep HTTP development usable.
+    secure: env.https ? true : env.trustProxy !== false ? 'auto' : false,
     path: '/',
   };
 }
