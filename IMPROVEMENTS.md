@@ -2,6 +2,32 @@
 
 Пока пусто. Некритичные находки добавляются сюда по мере работы.
 
+## 2026-11-23, Task 16 — inventory number is derived, not persisted
+
+`inventory_counts` has no document-number column, so the UI labels a count as
+`ИНВ-<year>-<id>` computed from `created_at` and the primary key. The label is
+stable for a given row, but it is not reserved through `document_sequences`, does
+not appear in the audit details, and would have to be recomputed by every export.
+The inventory act CSV (spec §5.8/§5.13) belongs to the reports task; if it needs
+the same number, either persist it in a new migration or export the derived label
+with the same formula. Until then, a manual report must not assume the number is
+stored.
+
+## 2026-11-23, Task 16 — inventory list caps at 200 rows
+
+`/inventory` loads the 200 newest counts and has no pagination. That is enough for
+the demo dataset and keeps the page a single query, but a long-lived production
+database would hide older counts from the list. Direct links by id still work,
+and every count remains reachable through the audit log. Add pagination or a
+year/status filter when the reports task revisits inventory history.
+
+## 2026-11-23, Task 16 — act CSV export is not wired
+
+The discrepancy act is available on screen and prints cleanly, but the CSV button
+from spec §5.8/§5.13 is not implemented here. CSV generation is shared with the
+reports screen, so the export belongs to that task; this stage deliberately did
+not add a second CSV encoder in the inventory controller.
+
 ## 2026-11-23, Task 12 — document totals are 2dp while consumption valuations are 4dp
 
 `stock_documents.total_cost` and `stock_document_lines.total_cost` are

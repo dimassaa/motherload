@@ -1,0 +1,77 @@
+<%
+  const fieldError = (name) => (fieldErrors && fieldErrors[name] ? fieldErrors[name] : null);
+%>
+<section aria-labelledby="inventory-new-title">
+  <div class="page-header">
+    <h1 id="inventory-new-title" class="page-header__title">Новая инвентаризация</h1>
+    <a href="/inventory">← К списку</a>
+  </div>
+
+  <form class="card form-panel" method="post" action="/inventory">
+    <%- csrfField() %>
+
+    <h2 class="card__title">Склад и комментарий</h2>
+    <p class="card__text">
+      Система сразу зафиксирует учётные остатки по позициям, у которых на складе есть остаток или
+      движения за последние 180 дней. Пустые позиции без истории в снимок не попадут.
+    </p>
+
+    <div class="notice notice--warning" role="note">
+      <strong>Склад будет заморожен.</strong>
+      С момента создания и до утверждения или отмены приёмка, расход и перемещение по этому складу
+      станут недоступны. Так учётные количества не разойдутся с фактическими.
+    </div>
+
+    <%- include('../../partials/form-errors', { errors }) %>
+
+    <div class="form">
+      <div class="form-field">
+        <label class="form-field__label" for="inventory-warehouse">Склад</label>
+        <select
+          class="form-field__select"
+          id="inventory-warehouse"
+          name="warehouseId"
+          required
+          <%- fieldError('warehouseId') ? 'aria-invalid="true" aria-describedby="inventory-warehouse-error"' : '' %>
+        >
+          <option value="">Выберите склад</option>
+          <% for (const warehouse of warehouses) { %>
+            <option
+              value="<%= warehouse.id %>"
+              <%- String(values.warehouseId ?? '') === String(warehouse.id) ? 'selected' : '' %>
+            >
+              <%= warehouse.name %> · <%= warehouse.city %>
+            </option>
+          <% } %>
+        </select>
+        <% if (fieldError('warehouseId')) { %>
+          <p class="form-field__error" id="inventory-warehouse-error">
+            <%= fieldError('warehouseId') %>
+          </p>
+        <% } %>
+      </div>
+
+      <div class="form-field">
+        <label class="form-field__label" for="inventory-comment">Комментарий</label>
+        <textarea
+          class="form-field__textarea"
+          id="inventory-comment"
+          name="comment"
+          rows="3"
+          maxlength="500"
+          placeholder="Например: плановая инвентаризация перед закрытием месяца"
+          <%- fieldError('comment') ? 'aria-invalid="true" aria-describedby="inventory-comment-error"' : '' %>
+        ><%= values.comment ?? '' %></textarea>
+        <p class="form-field__hint">Необязательно. Остаётся в документе и аудите.</p>
+        <% if (fieldError('comment')) { %>
+          <p class="form-field__error" id="inventory-comment-error"><%= fieldError('comment') %></p>
+        <% } %>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn btn--primary" type="submit">Начать инвентаризацию</button>
+      <a class="btn btn--ghost" href="/inventory">Отмена</a>
+    </div>
+  </form>
+</section>
