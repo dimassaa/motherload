@@ -26,11 +26,36 @@ services:
       # Inside the compose network the database is reachable by service name,
       # so the .env value pointing at localhost cannot be reused verbatim.
       DATABASE_URL: postgres://${POSTGRES_USER:-motherload}:${POSTGRES_PASSWORD:-motherload}@db:5432/${POSTGRES_DB:-motherload}
+      # The container always listens on 3000; host PORT only changes the
+      # published port below, so the healthcheck and image EXPOSE stay valid.
+      PORT: 3000
+      # Demo deployment contract: the entrypoint seeds once while the volume is
+      # empty. A production install sets SEED_DEMO=false and leaves the
+      # analytics reference date empty, so "today" is the real Minsk day.
+      SEED_DEMO: ${SEED_DEMO:-true}
+      ANALYTICS_REFERENCE_DATE: ${ANALYTICS_REFERENCE_DATE:-2026-11-22}
+      # The session secret must come from .env; silently inventing one would
+      # invalidate every login on each container recreation.
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set in .env (at least 32 characters)}
     depends_on:
       db:
         condition: service_healthy
     ports:
       - '${PORT:-3000}:3000'
+    healthcheck:
+      # node:24-slim has no curl/wget; Node's fetch is available and keeps the
+      # check dependency-free. start_period covers migrations plus the demo seed.
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
 volumes:
   motherload-db:

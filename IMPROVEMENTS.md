@@ -302,3 +302,39 @@ that is a config change, not a test cleanup, so it is deferred. Until then the
 fixture name carries pid and timestamp, and cleanup runs in a `finally` block.
 The page itself no longer creates the directory on `GET`: it renders the empty
 state when `backups/` is absent, and `npm run backup` owns creation.
+
+## 2026-11-23, Task 23 — every demo position classifies as XYZ class Z
+
+The demo history starts with an opening receipt 150–170 days before
+`ANALYTICS_REFERENCE_DATE`, as the task brief requires. The XYZ window, however,
+is the six full calendar months before the reference month: for 22.11.2026 it is
+1 May – 1 November 2026. May therefore has zero demand for every position. Even
+a perfectly even June–October demand yields a coefficient of variation of about
+0.45, far above the Y limit of 0.25, so the ABC×XYZ matrix has only the Z column
+populated. This is a conflict between two explicit demo rules, not a seed bug.
+Fix it in the analytics/demo task by either (a) accepting an opening receipt
+around 210 days before the reference for a subset of positions, or (b) anchoring
+the XYZ window to the demo history start instead of the calendar. The seed was
+left literal to the brief so the conflict stays visible.
+
+## 2026-11-23, Task 23 — a failed demo seed leaves partial data behind
+
+Reference rows are inserted in one transaction and each stock document posts in
+its own transaction, but the whole seed is not atomic. If a document posting
+fails midway (disk error, killed process), `components` is already populated and
+the next `npm run db:seed` skips the database as "already seeded". The operator
+must run `npm run db:reset` (which forces a truncate) to recover. A marker table
+or a single service-level transaction would make the seed resumable; that is a
+schema/service change and was out of scope here. Docker startup is protected in
+practice by `set -e`: a failed seed stops the container instead of serving a
+half-empty demo.
+
+## 2026-11-23, Task 23 — Docker Compose was verified without the compose plugin
+
+This environment has the Docker daemon but neither `docker compose` nor
+`docker-compose`. The image was therefore built with `docker build` and the
+entrypoint verified by running a fresh PostgreSQL 18 container plus the app
+container on a user-defined network with the same environment variables the
+compose file passes. Compose YAML itself was parsed, but `docker compose up`
+was not executed. Run the documented one-command path once on a machine with the
+compose plugin installed before shipping.
