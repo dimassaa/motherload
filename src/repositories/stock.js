@@ -321,16 +321,32 @@ export async function lockOpenBatches(client, componentId, warehouseId) {
 }
 
 /**
+ * Record which batch a document line or inventory line consumed.
+ *
+ * Exactly one source is set: `lineId` for issues and transfers, or
+ * `inventoryLineId` for a negative inventory adjustment, which has no stock
+ * document. The `batch_consumptions_single_source` check rejects rows with zero
+ * or two sources, so a caller mistake fails loudly instead of losing provenance.
  * @param {import('pg').PoolClient} client
- * @param {{ lineId: number, batchId: number, qty: number, unitCost: string }} input
+ * @param {{
+ *   lineId?: number | null,
+ *   inventoryLineId?: number | null,
+ *   batchId: number,
+ *   qty: number,
+ *   unitCost: string,
+ * }} input
  * @returns {Promise<{ id: number }>}
  */
-export async function insertBatchConsumption(client, { lineId, batchId, qty, unitCost }) {
+export async function insertBatchConsumption(
+  client,
+  { lineId = null, inventoryLineId = null, batchId, qty, unitCost },
+) {
   const { rows } = await client.query(
-    `insert into batch_consumptions (line_id, batch_id, qty, unit_cost)
-     values ($1, $2, $3, $4)
+    `insert into batch_consumptions
+       (line_id, inventory_line_id, batch_id, qty, unit_cost)
+     values ($1, $2, $3, $4, $5)
      returning id`,
-    [lineId, batchId, qty, unitCost],
+    [lineId, inventoryLineId, batchId, qty, unitCost],
   );
 
   return { id: rows[0].id };
