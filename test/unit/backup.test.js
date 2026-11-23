@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -67,4 +69,35 @@ test('restore refuses a dump path that does not exist even with --yes', () => {
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /не найден/i);
+});
+
+test('restore requires the .dump extension', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'motherload-restore-'));
+  const file = path.join(directory, 'dump-without-extension');
+  await writeFile(file, 'not a dump');
+
+  try {
+    const result = runRestore([file, '--yes']);
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /расширение \.dump/i);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('restore refuses a .dump file that is not a PostgreSQL archive', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'motherload-restore-'));
+  const file = path.join(directory, 'not-a-dump.dump');
+  await writeFile(file, 'this is a plain text file, not a custom-format archive\n');
+
+  try {
+    const result = runRestore([file, '--yes']);
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /не похож на дамп/i);
+    assert.match(result.stderr, /база не изменена/i);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

@@ -8,7 +8,7 @@
     <div class="backup-status<%= lastBackup.expired ? ' backup-status--stale' : '' %>">
       <p class="backup-status__text">
         Последний бэкап: <span class="backup-status__name"><%= lastBackup.name %></span> —
-        <%= formatDateTime(lastBackup.modifiedAt) %>, <%= lastBackup.ageLabel %>.
+        <%= formatDateTime(lastBackup.modifiedAt) %>, <%= formatAge(lastBackup.modifiedAt) %>.
       </p>
       <% if (lastBackup.expired) { %>
         <p class="backup-status__warning" role="status">
@@ -82,7 +82,7 @@
                 <td class="table__cell table__cell--code"><%= file.name %></td>
                 <td class="table__cell table__cell--num"><%= file.sizeLabel %></td>
                 <td class="table__cell table__cell--code"><%= formatDateTime(file.modifiedAt) %></td>
-                <td class="table__cell"><%= file.ageLabel %></td>
+                <td class="table__cell"><%= formatAge(file.modifiedAt) %></td>
               </tr>
             <% } %>
           </tbody>

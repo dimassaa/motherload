@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   csrfField,
+  formatAge,
   formatDate,
   formatDateTime,
   formatMoney,
@@ -109,4 +110,18 @@ test('csrfField renders the session token and escapes it', () => {
 test('csrfField renders nothing before sessions or CSRF exist', () => {
   assert.equal(csrfField({}), '');
   assert.equal(csrfField({ session: {} }), '');
+});
+
+test('formatAge uses Russian plural forms across minute, hour and day ranges', () => {
+  const now = new Date('2026-11-23T12:00:00Z');
+  const ago = (ms) => new Date(now.getTime() - ms);
+
+  assert.equal(formatAge(ago(30 * 1000), now), 'только что');
+  assert.equal(formatAge(ago(60 * 1000), now), '1 минуту назад');
+  assert.equal(formatAge(ago(2 * 60 * 1000), now), '2 минуты назад');
+  assert.equal(formatAge(ago(5 * 60 * 1000), now), '5 минут назад');
+  assert.equal(formatAge(ago(60 * 60 * 1000), now), '1 час назад');
+  assert.equal(formatAge(ago(3 * 60 * 60 * 1000), now), '3 часа назад');
+  assert.equal(formatAge(ago(2 * 24 * 60 * 60 * 1000), now), '2 дня назад');
+  assert.equal(formatAge(ago(11 * 24 * 60 * 60 * 1000), now), '11 дней назад');
 });

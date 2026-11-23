@@ -24,8 +24,12 @@ const BACKUPS_DIR = fileURLToPath(new URL('../backups', import.meta.url));
 /**
  * Delete dumps this tool created more than {@link BACKUP_RETENTION_DAYS} days
  * ago. Operator copies in `backups/` are left alone.
+ *
+ * A failed deletion is collected, not thrown: the new dump is already on disk,
+ * so retention trouble must warn instead of turning a successful backup into a
+ * failed command.
  * @param {Date} [now]
- * @returns {Promise<string[]>} names that were removed
+ * @returns {Promise<{ removed: string[], failed: string[] }>}
  */
 async function removeExpiredBackups(now = new Date()) {
   const names = await readdir(BACKUPS_DIR);
@@ -38,10 +42,19 @@ async function removeExpiredBackups(now = new Date()) {
   }
 
   const expired = selectExpiredBackups(candidates, now);
+  const removed = [];
+  const failed = [];
+
   for (const file of expired) {
-    await unlink(path.join(BACKUPS_DIR, file.name));
+    try {
+      await unlink(path.join(BACKUPS_DIR, file.name));
+      removed.push(file.name);
+    } catch (error) {
+      failed.push(`${file.name} (${error.message})`);
+    }
   }
-  return expired.map((file) => file.name);
+
+  return { removed, failed };
 }
 
 async function main() {
@@ -83,7 +96,21 @@ async function main() {
     `Резервная копия создана: backups/${fileName} (${formatFileSize(info.size)}).\n`,
   );
 
-  const removed = await removeExpiredBackups();
+  const removed = [];
+  // Retention runs after a successful dump. Any trouble here is a warning, not
+  // a failed backup: the file an operator needs already exists.
+  try {
+    const result = await removeExpiredBackups();
+    removed.push(...result.removed);
+    if (result.failed.length > 0) {
+      process.stderr.write(
+        `Копия создана, но некоторые старые файлы не удалены: ${result.failed.join('; ')}.\n`,
+      );
+    }
+  } catch (error) {
+    process.stderr.write(`Копия создана, но очистка старых файлов не удалась: ${error.message}.\n`);
+  }
+
   if (removed.length > 0) {
     process.stdout.write(
       `Удалены копии старше ${BACKUP_RETENTION_DAYS} дней: ${removed.join(', ')}.\n`,

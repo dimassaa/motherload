@@ -2,6 +2,7 @@ import { env } from '../config/env.js';
 import { csvFilename, toCsv } from '../domain/csv.js';
 import { ForbiddenError, NotFoundError, ValidationError } from '../domain/errors.js';
 import { d, formatMoney, formatQty } from '../domain/money.js';
+import { redactSecrets } from '../domain/redact.js';
 import { listAuditEntries } from '../repositories/audit.js';
 import * as reportRepository from '../repositories/reports.js';
 import * as audit from './audit.js';
@@ -449,7 +450,10 @@ async function buildAudit() {
     {
       key: 'details',
       label: 'Детали',
-      format: (row) => JSON.stringify(row.details ?? {}),
+      // The CSV is a second read surface for the same rows: it must apply the
+      // same secret-key policy as the audit page, otherwise a leaked hash would
+      // travel in a file that is copied off the server.
+      format: (row) => JSON.stringify(redactSecrets(row.details ?? {})),
     },
   ];
 

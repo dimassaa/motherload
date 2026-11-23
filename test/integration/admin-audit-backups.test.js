@@ -67,6 +67,15 @@ test('audit page filters by action and hides secrets in details', async () => {
   assert.doesNotMatch(res.text, /csrf-secret-value/);
   assert.match(res.text, /visible-note/);
   assert.match(res.text, /class="details-json"/);
+
+  // The CSV export reads the same rows and must apply the same policy: a dump
+  // of the audit log is copied off the server, so a hash must not travel in it.
+  const csv = await agent.get('/reports/export/audit');
+  assert.equal(csv.status, 200);
+  assert.match(csv.headers['content-type'], /text\/csv/);
+  assert.match(csv.text, /visible-note/);
+  assert.doesNotMatch(csv.text, /hidden-hash/);
+  assert.doesNotMatch(csv.text, /csrf-secret-value/);
 });
 
 test('audit page filters by entity type and date range', async () => {
@@ -102,6 +111,8 @@ test('audit page shows an explicit notice for an inverted date range', async () 
 
   assert.equal(res.status, 200);
   assert.match(res.text, /позже/i);
+  // One explanation only: the range notice replaces the generic empty state.
+  assert.doesNotMatch(res.text, /Записей пока нет/);
 });
 
 test('backups page lists dump files without offering a download', async () => {

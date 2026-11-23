@@ -149,6 +149,44 @@ export function formatDateTime(value) {
   return dateTimeFormatter.format(date).replace(', ', ' ');
 }
 
+/** Russian plural form for a count: `1 минуту`, `2 минуты`, `5 минут`. */
+function plural(count, [one, few, many]) {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
+  return many;
+}
+
+/**
+ * Age of a past moment in words: `только что`, `2 часа назад`, `3 дня назад`.
+ * Abbreviations would be shorter but read as machine output on a screen that is
+ * meant to be understood by an administrator.
+ * @param {Date|string} value
+ * @param {Date} [now]
+ * @throws {TypeError} for an unparseable value
+ */
+export function formatAge(value, now = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new TypeError(`formatAge: expected a valid date, got ${String(value)}`);
+  }
+
+  const minutes = Math.floor((now.getTime() - date.getTime()) / 60000);
+  if (minutes < 1) return 'только что';
+  if (minutes < 60) {
+    return `${minutes} ${plural(minutes, ['минуту', 'минуты', 'минут'])} назад`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours} ${plural(hours, ['час', 'часа', 'часов'])} назад`;
+  }
+
+  const days = Math.floor(hours / 24);
+  return `${days} ${plural(days, ['день', 'дня', 'дней'])} назад`;
+}
+
 /** Format an already-percentage value: `12,3%`. */
 export function formatPct(value, fractionDigits = 1) {
   const formatter = new Intl.NumberFormat('ru-BY', {

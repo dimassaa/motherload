@@ -15,6 +15,12 @@ const USAGE =
   'Укажите файл дампа и подтвердите действие:\n' +
   '  npm run restore -- backups/motherload-20261123-120000.dump --yes\n';
 
+function missingPgRestoreError() {
+  return new Error(
+    'Не найден pg_restore. Установите PostgreSQL и добавьте его папку bin в PATH (на Windows это, например, C:\\Program Files\\PostgreSQL\\18\\bin).',
+  );
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const confirmed = args.includes('--yes');
@@ -41,6 +47,25 @@ async function main() {
     throw new Error(`Файл ${fileArg} не найден. Укажите путь к дампу из папки backups/.`);
   }
 
+  if (!filePath.toLowerCase().endsWith('.dump')) {
+    throw new Error(
+      `Файл ${fileArg} должен иметь расширение .dump — так называются дампы, созданные npm run backup.`,
+    );
+  }
+
+  // Dry run before touching the target database: `pg_restore --list` parses the
+  // archive header and fails on a text file or a partial download. A plain
+  // `--clean` run against a non-archive would still connect and could drop
+  // objects before failing, so this check must come first.
+  try {
+    await runPgCommand('pg_restore', ['--list', filePath]);
+  } catch (error) {
+    if (error.code === 'ENOENT') throw missingPgRestoreError();
+    throw new Error(
+      `Файл ${fileArg} не похож на дамп PostgreSQL: pg_restore --list сообщил «${error.message}». Восстановление отменено, база не изменена.`,
+    );
+  }
+
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error(
@@ -58,11 +83,7 @@ async function main() {
       filePath,
     ]);
   } catch (error) {
-    if (error.code === 'ENOENT') {
-      throw new Error(
-        'Не найден pg_restore. Установите PostgreSQL и добавьте его папку bin в PATH (на Windows это, например, C:\\Program Files\\PostgreSQL\\18\\bin).',
-      );
-    }
+    if (error.code === 'ENOENT') throw missingPgRestoreError();
     throw new Error(
       `Восстановление не удалось. pg_restore сообщил: ${error.message}. Проверьте DATABASE_URL и доступность сервера.`,
     );
