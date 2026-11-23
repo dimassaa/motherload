@@ -9,6 +9,7 @@ import * as componentsController from '../controllers/components.js';
 import * as dashboardController from '../controllers/dashboard.js';
 import * as inventoryController from '../controllers/inventory.js';
 import * as profileController from '../controllers/profile.js';
+import * as reportsController from '../controllers/reports.js';
 import * as stockController from '../controllers/stock.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { csrfProtection } from '../middleware/csrf.js';
@@ -117,6 +118,12 @@ export function createWebRouter({ loginLimiter }) {
     requireRole('admin', 'storekeeper'),
     stockController.showTransfer,
   );
+
+  // Reports are read-only for every role, including the analyst. The audit
+  // export is the single exception and is narrowed inside the report service,
+  // because the type is a path segment rather than a separate route.
+  router.get('/reports', requireAuth, reportsController.showReports);
+  router.get('/reports/export/:type', requireAuth, reportsController.exportReport);
 
   // Inventory is a storekeeper/admin workflow; approval is a separate admin
   // right, so the approve route narrows the role instead of relying on the

@@ -236,3 +236,29 @@ even at 1440 px; the discomfort previously noted for 1280–1439 px now covers t
 reference desktop width. All links remain visible, but a compact admin menu
 (or moving reference data under one "Администрирование" entry) is worth doing
 before the final layout pass.
+
+## 2026-11-23, Task 21 — catalog export button is still missing
+
+§5.3 asks for an «Экспорт CSV» button on `/components` that keeps the current
+filters. `/reports/export/stock` accepts `warehouseId` and `categoryId`, so the
+data path exists, but the catalog view and controller are outside Task 21's file
+scope. A short follow-up should compose that URL with `queryString()` and add the
+button beside the filter form; the report itself needs no new code.
+
+## 2026-11-23, Task 21 — the reference-date helper now has a fourth copy
+
+`src/services/reports.js` repeats the `ANALYTICS_REFERENCE_DATE` / Europe/Minsk
+"today" helper already present in `analytics.js`, `catalog.js` and `alerts.js`.
+Task 20 explicitly deferred extraction to the reports task, but doing it here
+would change three services outside this task's scope. Extract one shared clock
+module (`referenceDate()` and `todayInMinsk()`) in a dedicated refactor before
+the final analytics pass.
+
+## 2026-11-23, Task 21 — CSV exports are built fully in memory
+
+Every report loads all matching rows and materialises one string before sending
+it. That is fine for the demo dataset and keeps `toCsv` a pure function, but a
+multi-year audit export or a large movement range will grow memory linearly.
+The audit export has no date filter at all. If production volumes appear, add a
+date window to the audit card and stream rows into the response instead of
+joining them in memory.

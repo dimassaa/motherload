@@ -98,7 +98,7 @@ test('stock ui: receipt form is available to storekeeper and forbidden to analys
   }
 });
 
-test('stock ui: /stock redirects and the navigation never advertises a missing page', async () => {
+test('stock ui: /stock redirects and the navigation matches the routes that exist', async () => {
   const ctx = await seedStock();
 
   const storekeeper = await ctx.signIn('storekeeper');
@@ -113,13 +113,7 @@ test('stock ui: /stock redirects and the navigation never advertises a missing p
   assert.match(storekeeperNav.text, /href="\/analytics\/abc"[\s\S]*?Аналитика/);
   assert.doesNotMatch(storekeeperNav.text, /href="\/analytics"/);
   assert.match(storekeeperNav.text, /href="\/alerts"/);
-  for (const missing of ['/reports']) {
-    assert.doesNotMatch(
-      storekeeperNav.text,
-      new RegExp(`href="${missing}"`),
-      `${missing} must stay hidden until its route exists`,
-    );
-  }
+  assert.match(storekeeperNav.text, /href="\/reports"/);
 
   const admin = await ctx.signIn('admin');
   const adminNav = await admin.agent.get('/dashboard');
@@ -127,13 +121,7 @@ test('stock ui: /stock redirects and the navigation never advertises a missing p
   assert.match(adminNav.text, /href="\/analytics\/abc"/);
   assert.doesNotMatch(adminNav.text, /href="\/analytics"/);
   assert.match(adminNav.text, /href="\/alerts"/);
-  for (const missing of ['/reports']) {
-    assert.doesNotMatch(
-      adminNav.text,
-      new RegExp(`href="${missing}"`),
-      `${missing} must stay hidden until its route exists`,
-    );
-  }
+  assert.match(adminNav.text, /href="\/reports"/);
 
   const analyst = await ctx.signIn('analyst');
   const denied = await analyst.agent.get('/stock');
@@ -147,7 +135,7 @@ test('stock ui: /stock redirects and the navigation never advertises a missing p
   assert.doesNotMatch(analystNav.text, /href="\/analytics"/);
   assert.doesNotMatch(analystNav.text, /href="\/stock"/);
   assert.match(analystNav.text, /href="\/alerts"/);
-  assert.doesNotMatch(analystNav.text, /href="\/reports"/);
+  assert.match(analystNav.text, /href="\/reports"/);
 });
 
 test('stock ui: an out-of-range document id is a 404, not a database error', async () => {
