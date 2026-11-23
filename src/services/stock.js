@@ -26,10 +26,46 @@ const DOCUMENT_YEAR_MAX = 2999;
 const ISSUE_REASONS = new Set(['sale', 'defect', 'supplier_return', 'internal', 'other']);
 
 /**
+ * Lock warehouses and refuse stock operations while an inventory count is live
+ * on any of them. The row locks are taken first on purpose: inventory count
+ * creation takes the same locks before freezing the warehouse, so a posting
+ * cannot pass the check and then race the snapshot.
+ *
+ * Locks are always taken in ascending id order. A transfer needs both its
+ * warehouses locked, and two opposite A→B / B→A transfers locking in call order
+ * would each hold one row and wait for the other. The freeze check runs after
+ * all locks are held, so no count can slip in between them.
+ *
+ * @param {import('pg').PoolClient} client client inside the stock transaction
+ * @param {number[]} warehouseIds
+ * @returns {Promise<Array<{ id: number, code: string, name: string }>>}
+ * @throws {NotFoundError} when a warehouse does not exist
+ * @throws {ValidationError} when a warehouse is archived
+ * @throws {ConflictError} when a draft or submitted inventory count holds a warehouse
+ */
+async function lockWarehousesNotFrozen(client, warehouseIds) {
+  const warehouses = [];
+
+  for (const warehouseId of [...new Set(warehouseIds)].sort((left, right) => left - right)) {
+    const warehouse = await stock.lockWarehouse(client, warehouseId);
+    if (!warehouse) throw new NotFoundError('Склад не найден.');
+    if (!warehouse.isActive) {
+      throw new ValidationError('Склад неактивен, операции с ним недоступны.');
+    }
+    warehouses.push(warehouse);
+  }
+
+  for (const warehouse of warehouses) {
+    const activeCountId = await stock.findActiveInventoryCount(client, warehouse.id);
+    if (activeCountId !== null) throw new ConflictError(FROZEN_WAREHOUSE_MESSAGE);
+  }
+
+  return warehouses;
+}
+
+/**
  * Lock the warehouse and refuse stock operations while an inventory count is
- * live. The row lock is taken first on purpose: inventory count creation takes
- * the same lock before freezing the warehouse, so a posting cannot pass the
- * check and then race the snapshot.
+ * live.
  *
  * Shared by receipts, issues, transfers and inventory counts.
  *
@@ -41,13 +77,7 @@ const ISSUE_REASONS = new Set(['sale', 'defect', 'supplier_return', 'internal', 
  * @throws {ConflictError} when a draft or submitted inventory count holds the warehouse
  */
 export async function assertWarehouseNotFrozen(client, warehouseId) {
-  const warehouse = await stock.lockWarehouse(client, warehouseId);
-  if (!warehouse) throw new NotFoundError('Склад не найден.');
-  if (!warehouse.isActive) throw new ValidationError('Склад неактивен, операции с ним недоступны.');
-
-  const activeCountId = await stock.findActiveInventoryCount(client, warehouse.id);
-  if (activeCountId !== null) throw new ConflictError(FROZEN_WAREHOUSE_MESSAGE);
-
+  const [warehouse] = await lockWarehousesNotFrozen(client, [warehouseId]);
   return warehouse;
 }
 
@@ -133,13 +163,13 @@ function prepareLines(lines) {
 }
 
 /**
- * Validate one issue line. Unlike a receipt, an issue carries no price: cost is
- * derived from the consumed FIFO batches.
+ * Validate one line that only carries a component and a quantity. Unlike a
+ * receipt, an issue and a transfer derive cost from the consumed FIFO batches.
  * @param {{ componentId: number, qty: number }} line
  * @param {number} position 1-based line number used in error messages
  * @returns {{ componentId: number, qty: number }}
  */
-function prepareIssueLine(line, position) {
+function prepareQuantityLine(line, position) {
   return {
     componentId: readId(line?.componentId, `Строка ${position}: выберите позицию.`),
     qty: readQty(line?.qty, position),
@@ -148,19 +178,20 @@ function prepareIssueLine(line, position) {
 
 /**
  * @param {unknown[]} lines
+ * @param {string} emptyMessage Russian, user-facing text naming the document
  * @returns {Array<{ componentId: number, qty: number }>}
  * @throws {ValidationError} on an empty list, a malformed line or a repeated component
  */
-function prepareIssueLines(lines) {
+function prepareQuantityLines(lines, emptyMessage) {
   if (!Array.isArray(lines) || lines.length === 0) {
-    throw new ValidationError('Добавьте хотя бы одну строку расхода.');
+    throw new ValidationError(emptyMessage);
   }
 
   const preparedLines = [];
   const seenComponentIds = new Set();
 
   for (const [index, line] of lines.entries()) {
-    const prepared = prepareIssueLine(line, index + 1);
+    const prepared = prepareQuantityLine(line, index + 1);
 
     // Two rows for one component would each be planned against the same batch
     // snapshot, and the second guarded decrement would overdraw the batch. The
@@ -174,6 +205,16 @@ function prepareIssueLines(lines) {
   }
 
   return preparedLines;
+}
+
+/** @param {unknown[]} lines @returns {Array<{ componentId: number, qty: number }>} */
+function prepareIssueLines(lines) {
+  return prepareQuantityLines(lines, 'Добавьте хотя бы одну строку расхода.');
+}
+
+/** @param {unknown[]} lines @returns {Array<{ componentId: number, qty: number }>} */
+function prepareTransferLines(lines) {
+  return prepareQuantityLines(lines, 'Добавьте хотя бы одну строку перемещения.');
 }
 
 /**
@@ -195,13 +236,54 @@ function readIssueReason(reason) {
  * @param {number} position 1-based line number used in error messages
  * @returns {string}
  */
-function toIssueLineTotal(totalCost, position) {
+function toLineTotal(totalCost, position) {
   const rounded = d(totalCost).toFixed(2);
   if (d(rounded).greaterThan(LINE_TOTAL_MAX)) {
     throw new ValidationError(`Строка ${position}: сумма строки слишком большая.`);
   }
 
   return rounded;
+}
+
+/**
+ * Store the weighted average of the consumed batches on the document line. The
+ * authoritative split stays in `batch_consumptions`, so this value is a display
+ * and reporting convenience, not the source of cost.
+ * @param {string} lineTotal stored two-decimal total
+ * @param {number} qty whole units on the line
+ * @returns {string}
+ */
+function weightedUnitCost(lineTotal, qty) {
+  return d(lineTotal).dividedBy(qty).toDecimalPlaces(UNIT_COST_SCALE).toFixed(UNIT_COST_SCALE);
+}
+
+/**
+ * Allocate every line of an issue or transfer against locked source batches.
+ * Nothing is written here: a shortage must abort the whole document before its
+ * number is reserved or a single row is touched.
+ * @param {import('pg').PoolClient} client
+ * @param {Array<{ componentId: number, qty: number }>} lines
+ * @param {number} warehouseId warehouse the stock leaves
+ * @returns {Promise<Array<{
+ *   line: { componentId: number, qty: number },
+ *   allocations: Array<{ batchId: number, qty: number, unitCost: string, totalCost: string }>,
+ *   totalCost: string,
+ * }>>}
+ */
+async function planFifoLines(client, lines, warehouseId) {
+  const plannedLines = [];
+
+  for (const [index, line] of lines.entries()) {
+    const batches = await stock.lockOpenBatches(client, line.componentId, warehouseId);
+    const allocation = allocateFifo(batches, line.qty);
+    plannedLines.push({
+      line,
+      allocations: allocation.allocations,
+      totalCost: toLineTotal(allocation.totalCost, index + 1),
+    });
+  }
+
+  return plannedLines;
 }
 
 /**
@@ -424,16 +506,7 @@ export async function postIssue({
     // Allocate before writing anything: a shortage must abort here, before the
     // document number is reserved or a single row is touched. `lockOpenBatches`
     // serialises concurrent issues of the same component and warehouse.
-    const plannedLines = [];
-    for (const [index, line] of preparedLines.entries()) {
-      const batches = await stock.lockOpenBatches(client, line.componentId, warehouse);
-      const allocation = allocateFifo(batches, line.qty);
-      plannedLines.push({
-        line,
-        allocations: allocation.allocations,
-        totalCost: toIssueLineTotal(allocation.totalCost, index + 1),
-      });
-    }
+    const plannedLines = await planFifoLines(client, preparedLines, warehouse);
 
     const totalCost = plannedLines
       .reduce((sum, planned) => sum.plus(planned.totalCost), d(0))
@@ -456,12 +529,7 @@ export async function postIssue({
 
     for (const planned of plannedLines) {
       const { line, allocations, totalCost: lineTotal } = planned;
-      // The line keeps the weighted average of the consumed batches; the
-      // authoritative split remains in `batch_consumptions`.
-      const unitCost = d(lineTotal)
-        .dividedBy(line.qty)
-        .toDecimalPlaces(UNIT_COST_SCALE)
-        .toFixed(UNIT_COST_SCALE);
+      const unitCost = weightedUnitCost(lineTotal, line.qty);
 
       const documentLine = await stock.insertDocumentLine(client, {
         documentId: inserted.id,
@@ -502,6 +570,161 @@ export async function postIssue({
         entityType: 'stock_document',
         entityId: inserted.id,
         details: { number, reason: issueReason, total: totalCost },
+        req,
+      },
+      { client },
+    );
+
+    return { documentId: inserted.id, number, totalCost };
+  });
+}
+
+/**
+ * Post an inter-warehouse transfer: consume the source batches FIFO, recreate
+ * them on the destination with the same unit costs, and write both movements in
+ * one transaction.
+ *
+ * Cost is preserved, never recalculated: each consumed allocation becomes one
+ * destination batch at its own `unit_cost`, dated by the transfer document so its
+ * FIFO age starts on arrival. There is no draft state; any failure — including
+ * insufficient stock — rolls back the document number, both warehouses and every
+ * batch change together.
+ *
+ * @param {{
+ *   fromWarehouseId: number,
+ *   toWarehouseId: number,
+ *   docDate: string,
+ *   comment?: string | null,
+ *   lines: Array<{ componentId: number, qty: number }>,
+ *   userId?: number | null,
+ *   req?: import('express').Request,
+ * }} input
+ * @returns {Promise<{ documentId: number, number: string, totalCost: string }>}
+ * @throws {ValidationError} on malformed input, equal warehouses, an archived component or empty lines
+ * @throws {NotFoundError} when a warehouse or a component is missing
+ * @throws {ConflictError} when an inventory count freezes either warehouse
+ * @throws {InsufficientStockError} when the source batches cannot cover a line
+ */
+export async function postTransfer({
+  fromWarehouseId,
+  toWarehouseId,
+  docDate,
+  comment = null,
+  lines,
+  userId = null,
+  req,
+}) {
+  const preparedLines = prepareTransferLines(lines);
+  const year = readDocumentYear(docDate);
+  const from = readId(fromWarehouseId, 'Выберите склад-источник.');
+  const to = readId(toWarehouseId, 'Выберите склад-назначение.');
+  const author = readUserId(userId);
+
+  // The database enforces this too, but failing here keeps the answer a 400
+  // with a field-level message instead of a constraint violation.
+  if (from === to) {
+    throw new ValidationError('Склад-источник и склад-назначение должны различаться.');
+  }
+
+  return withTransaction(async (client) => {
+    await lockWarehousesNotFrozen(client, [from, to]);
+
+    const components = await stock.findComponentsByIds(
+      client,
+      preparedLines.map((line) => line.componentId),
+    );
+    assertComponentsUsable(preparedLines, components, 'перемещение');
+
+    const plannedLines = await planFifoLines(client, preparedLines, from);
+
+    const totalCost = plannedLines
+      .reduce((sum, planned) => sum.plus(planned.totalCost), d(0))
+      .toFixed(2);
+    if (d(totalCost).greaterThan(LINE_TOTAL_MAX)) {
+      throw new ValidationError('Сумма документа слишком большая.');
+    }
+
+    const number = await stock.nextDocumentNumber(client, 'transfer', year);
+    const inserted = await stock.insertDocument(client, {
+      type: 'transfer',
+      number,
+      docDate,
+      fromWarehouseId: from,
+      toWarehouseId: to,
+      comment,
+      totalCost,
+      createdBy: author,
+    });
+
+    for (const planned of plannedLines) {
+      const { line, allocations, totalCost: lineTotal } = planned;
+      const unitCost = weightedUnitCost(lineTotal, line.qty);
+
+      const documentLine = await stock.insertDocumentLine(client, {
+        documentId: inserted.id,
+        componentId: line.componentId,
+        qty: line.qty,
+        unitCost,
+        totalCost: lineTotal,
+      });
+
+      for (const allocation of allocations) {
+        await stock.insertBatchConsumption(client, {
+          lineId: documentLine.id,
+          batchId: allocation.batchId,
+          qty: allocation.qty,
+          unitCost: allocation.unitCost,
+        });
+
+        await stock.decrementBatchRemaining(client, {
+          batchId: allocation.batchId,
+          qty: allocation.qty,
+        });
+
+        // One destination batch per allocation is what keeps the cost exact: a
+        // single merged batch would need a weighted average and drift by
+        // rounding whenever the source batches had different prices.
+        await stock.insertBatch(client, {
+          componentId: line.componentId,
+          warehouseId: to,
+          unitCost: allocation.unitCost,
+          qty: allocation.qty,
+          receivedAt: docDate,
+          documentNo: number,
+        });
+
+        await stock.insertMovement(client, {
+          componentId: line.componentId,
+          warehouseId: from,
+          qtyDelta: -allocation.qty,
+          unitCost: allocation.unitCost,
+          documentId: inserted.id,
+          lineId: documentLine.id,
+        });
+
+        await stock.insertMovement(client, {
+          componentId: line.componentId,
+          warehouseId: to,
+          qtyDelta: allocation.qty,
+          unitCost: allocation.unitCost,
+          documentId: inserted.id,
+          lineId: documentLine.id,
+        });
+      }
+    }
+
+    await audit.record(
+      {
+        userId: author,
+        action: 'stock.transfer',
+        entityType: 'stock_document',
+        entityId: inserted.id,
+        details: {
+          number,
+          fromWarehouseId: from,
+          toWarehouseId: to,
+          total: totalCost,
+        },
         req,
       },
       { client },
@@ -554,7 +777,7 @@ export async function previewIssue({ warehouseId, lines }) {
     previewLines.push({
       componentId: line.componentId,
       allocations: allocation.allocations,
-      totalCost: toIssueLineTotal(allocation.totalCost, index + 1),
+      totalCost: toLineTotal(allocation.totalCost, index + 1),
     });
   }
 
