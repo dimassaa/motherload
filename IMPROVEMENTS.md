@@ -1,352 +1,233 @@
 # Improvements backlog — Motherload
 
-Пока пусто. Некритичные находки добавляются сюда по мере работы.
+Open, verified items only. Resolved findings are removed; version control and the
+task reports keep their history. Each item states the impact and why it was not
+fixed in the stage that found it.
 
-## 2026-11-23, Task 16 — inventory number is derived, not persisted
+## Spec gap
 
-`inventory_counts` has no document-number column, so the UI labels a count as
-`ИНВ-<year>-<id>` computed from `created_at` and the primary key. The label is
-stable for a given row, but it is not reserved through `document_sequences`, does
-not appear in the audit details, and would have to be recomputed by every export.
-The inventory act CSV (spec §5.8/§5.13) belongs to the reports task; if it needs
-the same number, either persist it in a new migration or export the derived label
-with the same formula. Until then, a manual report must not assume the number is
-stored.
+### 2026-11-23, Task 24 — public SEO metadata is missing
 
-## 2026-11-23, Task 16 — inventory list caps at 200 rows
+Spec §11 and acceptance criterion 13 require `description`, `canonical`, Open
+Graph and Twitter tags and JSON-LD `SoftwareApplication` on the public landing,
+plus `robots.txt` and `sitemap.xml` served by the application and a committed
+`public/img/og-cover.png` (1200×630). The current `head.ejs` emits only the
+title, favicon and `noindex` for private pages; `scripts/build-og.js` waits for
+an `og-cover.svg` that was never committed. This is not cosmetic: it is an unmet
+acceptance criterion and must be scheduled before submission.
 
-`/inventory` loads the 200 newest counts and has no pagination. That is enough for
-the demo dataset and keeps the page a single query, but a long-lived production
-database would hide older counts from the list. Direct links by id still work,
-and every count remains reachable through the audit log. Add pagination or a
-year/status filter when the reports task revisits inventory history.
+## Interface
 
-## 2026-11-23, Task 16 — act CSV export is not wired
+### 2026-11-23, Task 24 — 400/403/404/500 pages do not use the app layout
 
-The discrepancy act is available on screen and prints cleanly, but the CSV button
-from spec §5.8/§5.13 is not implemented here. CSV generation is shared with the
-reports screen, so the export belongs to that task; this stage deliberately did
-not add a second CSV encoder in the inventory controller.
+`src/middleware/errors.js` still answers browsers with a minimal bootstrap HTML
+page (title, `h1`, one paragraph) instead of the shared header, footer and error
+styling from §5.19. Status codes and Russian messages are correct, and API
+callers get JSON, so the functional contract holds; only the presentation is
+unfinished. Replacing the bootstrap response with a rendered view is a small,
+self-contained change.
 
-## 2026-11-23, Task 12 — document totals are 2dp while consumption valuations are 4dp
+### 2026-11-23, Task 24 — `GET /login` returns 404
 
-`stock_documents.total_cost` and `stock_document_lines.total_cost` are
-`numeric(14,2)`, while `batch_consumptions.unit_cost`, `stock_movements.unit_cost`
-and FIFO allocation totals keep four decimals. Rounding at the line boundary means
-a cost report can differ by up to a kopeck depending on whether it sums documents
-or consumption rows. Future cost reports must pick one source deliberately and
-state it; never mix both sources in one reconciliation.
+Only `POST /login` is routed. A user who types the address or follows an old
+bookmark sees «Страница не найдена» even though the same form is on `/`. Adding
+a redirect to `/` (or rendering the landing) removes a confusing dead end.
 
-## 2026-11-23, Task 12 — FIFO preview skips the inventory-freeze check
+### 2026-11-23, Task 20 — the alert list has no pagination
 
-`previewIssue` does not check whether an inventory count is freezing the warehouse,
-while `postIssue` rejects that case with 409. Showing the cost split is still
-useful on a frozen warehouse, and the posting path remains authoritative, so this
-is deliberate for an advisory preview. Task 14 (issue form) decides whether to
-disable preview during a count. Repeated `componentId` lines are rejected at the
-service boundary (400) for both preview and posting, so the optimistic-allocation
-case no longer exists.
+`/alerts` renders every row matching the filters. At most one open row exists per
+condition, so the open view stays small, but `status=all` grows with every
+resolved history row. Add pagination or a date window when browsing resolved
+history becomes a real task.
 
-## 2026-11-23, Task 11 — freeze check runs before supplier/component validation
-
-`postReceipt` checks the inventory freeze before it checks that the supplier and
-components are active. On a frozen warehouse an archived component therefore
-returns 409 «На складе идёт инвентаризация» instead of the 400 that names the
-real input problem. Deferred minor: the 409 is still true and actionable, and
-reordering only decides which error wins. Revisit when the receipt form (Task 14)
-defines the precedence it wants to show.
-
-## 2026-11-23, Task 14 — stock operation screens
-
-- The navigation audit found `/analytics`, `/alerts` and `/reports` had no routes
-  yet. They are hidden from `nav-links.ejs` until their tasks land; a visible
-  link must never advertise a 404.
-- Receipt rows with the same component are deliberately accepted, matching
-  `postReceipt`. The form does not merge them. The Task 11 note asked for a
-  decision here: changing the service contract is out of Task 14's scope, and
-  rejecting duplicates would contradict the approved brief. If duplicate batches
-  per receipt become a real accounting problem, merge rows client-side in a
-  dedicated change.
-- The component type-ahead exposes `role="combobox"`/`listbox` and keyboard
-  navigation but does not set `aria-activedescendant` while moving through the
-  options. A screen reader still has the native `<select>` fallback before the
-  module runs; the active-descendant refinement is deferred as a non-critical
-  accessibility improvement.
-
-## 2026-11-23, Task 11 — duplicate component lines produce duplicate batches
-
-`postReceipt` accepts the same `componentId` twice in one document and creates a
-separate `stock_batches` row per line. Nothing breaks — the ledger and FIFO stay
-consistent — but the receipt form can produce two batches for one purchase when
-the operator adds a repeated row by accident, which splits the cost history and
-makes the batch list harder to read. Owner: Task 14 (receipt form). Options:
-merge repeated lines in the form, reject duplicates with a 400, or document the
-behaviour deliberately. Decide when the form is built, since that is where the
-user-facing contract becomes visible.
-
-## 2026-11-23, Task 5 — RBAC, users, profile, audit
-
-- `GET /login` returns 404: only `POST /login` is routed. A user who types the
-  address or follows an old bookmark sees the not-found page. Task 4 owns the
-  auth routes; a redirect to `/` would be the natural fix.
-- 400/403/404 responses still use the Task 4 bootstrap HTML without the app
-  layout. Task 6 replaces it with the shared error views; the status codes and
-  Russian messages from this task already flow through that middleware.
-- The navigation bar wraps to a second row for administrators at 1280–1439 px,
-  because ten links plus the identity block no longer fit. All links stay
-  visible instead of being clipped by the previous horizontal scroll, but the
-  header is taller on those widths. A compact admin menu can be considered once
-  the remaining sections add their own navigation entries.
-
-## 2026-11-23, Task 7 — remaining §5.19 error pages for directories
-
-A refused directory delete now re-renders the active tab at 409 with the
-explanation in the page's form-errors area. Two directory responses still use the
-Task 4 bootstrap HTML without the app layout: a 403 for a non-admin on
-`/admin/directories*` and a 404 for an unknown entity or a malformed/missing
-`?edit=` id. That gap is the same one already listed under Task 5 and belongs to
-Task 6, which replaces `src/middleware/errors.js` with the shared error views.
-Listed here so the directory surface is explicitly covered by that task.
-
-## 2026-11-22, Task 4 — auth session and rate-limit notes
-
-- Rate-limit counters live in process memory. The spec deploys one application
-  container, so this is correct today; a multi-instance deployment would need a
-  shared store.
-- CSRF protection is mounted by the web router so `/healthz` does not create a
-  session row on every probe. Any future API router must mount
-  `csrfProtection` itself; this is called out in the middleware comment.
-
-## 2026-11-22, Task 1 — `sharp` high-severity advisory
-
-`npm audit` reports one high-severity advisory in the `sharp` devDependency
-(`<=0.35.5-rc.1`). It is used only by `scripts/build-og.js` (Task 3) to render
-the static OG cover locally and is never loaded by the server, so it does not
-affect the runtime image (`npm prune --omit=dev` in the Dockerfile). Deferred:
-the approved dependency range is `sharp@^0.34`, and the fix requires an upgrade
-decision that belongs to Task 24 (docs, CI, final polish).
-
-## 2026-11-23, Task 18 — analytics and catalog duplicate the reference-date helper
-
-`src/services/analytics.js` repeats the small `ANALYTICS_REFERENCE_DATE` /
-Europe/Minsk "today" helper that `src/services/catalog.js` keeps private. Both
-must agree or the six-month card chart and the XYZ window could describe
-different months. Extract one shared helper when a third caller (reorder or
-alerts) needs it; moving the catalog one now would be an unrelated refactor.
-
-## 2026-11-23, Task 18 — catalog and XYZ use different six-month windows
+### 2026-11-23, Task 18 — catalog and XYZ use different six-month windows
 
 The component card chart includes the reference month (June–November for
 22.11.2026), while XYZ deliberately uses only full months (May–October). Both
-windows are defensible, but the screens do not explain the difference. Align
-the labels or reuse one window helper before the reports task exposes both
-figures side by side.
+windows are defensible, but the screens do not explain the difference. Align the
+labels or reuse one window helper before the two figures are shown side by side.
 
-## 2026-11-23, Task 18 — monthly issue aggregation SQL is duplicated
-
-`src/repositories/components-read.js:listMonthlyConsumption` and
-`src/repositories/analytics.js:listMonthlyIssues` select issue quantity per
-month with the same document join and Europe/Minsk month bucket. The filters
-and consumers differ, so this stage left both in place. Extract one query when
-a third caller (reports or the dashboard feed) needs the same aggregation.
-
-
-
-## 2026-11-23, Task 19 — catalog recomputes ROP on every page load
-
-The catalog now attaches the reorder point and supports `status=below_rop`, so
-`catalog.list` runs the full pair calculation (two analytics queries plus the
-domain pass) even when the user only asked for the default name-sorted list.
-With the demo catalogue this is measured in milliseconds; a much larger
-catalogue should compute ROP once per request, cache it for a short TTL, or
-move the below-ROP filter into SQL with a materialised planning view. Deferred
-until a real dataset shows the cost.
-
-## 2026-11-23, Task 19 — aggregate low-data flag is conservative
-
-In "all warehouses" mode a component is flagged «мало данных» as soon as one
-participating pair has fewer than 14 days of consumption, because that pair's
-ROP comes from the `min_stock` fallback and is still summed into the row. The
-per-warehouse disclosure shows which pair is short, so the number is explained,
-but a future iteration could expose a distinct "частично" state or exclude the
-fallback pair from the aggregate ROP while keeping its suggested quantity.
-
-## 2026-11-23, Task 19 — negative ledger balances are clamped in analytics
-
-`calculateReorder` correctly rejects negative balances. Read-only analytics can
-still meet a negative per-warehouse balance from legacy fixtures or a manually
-edited ledger, so the service clamps it to zero before planning instead of
-failing the whole dashboard. This keeps the page available but hides a real
-data-integrity problem; a dedicated consistency check or alert (Task 20) should
-surface negative balances, and the issue document remains the only writer that
-must prevent them.
-
-## 2026-11-23, Task 19 — catalog below-ROP row can look healthy by totals
+### 2026-11-23, Task 19 — a catalog row below ROP can look healthy by totals
 
 The catalog row shows the summed balance and summed ROP, while `below_rop`
-matches as soon as one warehouse pair is below its own point. A component with
-a large central stock and one weak regional warehouse is therefore listed with a
+matches as soon as one warehouse pair is below its own point. A component with a
+large central stock and one weak regional warehouse is therefore listed with a
 healthy-looking total. The reorder page is the authoritative per-warehouse view;
-a later catalog pass could add a "N складов ниже ROP" hint to the status cell.
+a later catalog pass could add a «N складов ниже ROP» hint to the status cell.
 
-## 2026-11-23, Task 20 — dead_stock uses stock age, KPI deadValue does not
+### 2026-11-23, Task 16 — the inventory list caps at 200 rows
 
-`dead_stock` fires when the pair has stock, no issue inside the 90-day window
-(never issued counts), and the oldest still-relevant positive receipt is at least
-90 days old. That flags the actual frozen-inventory case while leaving a fresh
-receipt after an old issue alone.
+`/inventory` loads the 200 newest counts and has no pagination. That is enough
+for the demo dataset, but a long-lived database would hide older counts; direct
+links by id and the audit log still reach them. Add pagination or a year/status
+filter when inventory history becomes a working screen.
 
-The dashboard KPI `deadValue` still follows the literal §6.7 formula and counts
-stock of every component with no issue in 90 days, including stock received
-yesterday. Aligning it would change a KPI definition fixed by the spec and
-accepted in Task 19, and would rewrite the Task 19 dashboard expectations; that
-is a product decision, not a local Task 20 fix. The two surfaces therefore
-disagree for brand-new stock. Decide whether §6.7 should gain the stock-age
-condition before the final analytics pass.
+### 2026-11-23, Task 16 — the inventory number is derived, not persisted
 
-## 2026-11-23, Task 20 — manual resolve is intentionally transient
+`inventory_counts` has no document-number column, so the UI and the CSV export
+derive `ИНВ-<year>-<id>` from `created_at` and the primary key. The label is
+stable for a given row, but it is not reserved through `document_sequences`, does
+not appear in audit details, and would have to be recomputed by any other export.
+If the number ever needs to be immutable or quoted externally, persist it in a
+new migration.
 
-An admin can close an alert manually, but recalculation has no suppression list:
-if the condition is still true, the next pass opens a fresh alert beside the
-resolved history. That is deliberate — a still-true shortage must not stay hidden
-because someone clicked "Закрыть" — and is covered by an integration test. The
-cost is that manual resolution alone does not silence an alert permanently; only
-fixing the stock or resolving the condition does. A per-condition suppression
-window (with an owner and an expiry) would be a separate product feature.
+### 2026-11-23, Task 14 — the type-ahead lacks `aria-activedescendant`
 
-## 2026-11-23, Task 20 — the reference-date helper now has a third copy
+The component combobox supports `role="combobox"`/`listbox` and keyboard
+navigation but does not announce the active option to screen readers while the
+arrow keys move through suggestions. The native `<select>` remains as the
+no-JavaScript fallback before the module runs. The refinement costs a small JS
+change and a keyboard test.
 
-`src/services/alerts.js` repeats the `ANALYTICS_REFERENCE_DATE` / Europe/Minsk
-"today" helper already present in `analytics.js` and `catalog.js`. Task 18
-deferred extraction until the third caller appeared; that caller is now here, but
-moving the helper would touch two files outside Task 20's scope. Extract one
-shared clock module when the reports task adds its own windows.
+## Accounting and data
 
-## 2026-11-23, Task 20 — the alert list has no pagination
+### 2026-11-23, Task 20 — `dead_stock` uses stock age, KPI `deadValue` does not
 
-`/alerts` renders every row matching the filters. A recalculation creates at most
-one open row per condition, so the open view stays small, but a long-lived
-`status=all` selection will grow with every resolved history row. Add pagination
-or a date window when the resolved history becomes useful to browse.
+`dead_stock` fires only when the pair has stock, no issue in 90 days, and the
+oldest relevant receipt is at least 90 days old. The dashboard KPI `deadValue`
+follows the literal §6.7 formula and counts every component with no issue in 90
+days, including stock received yesterday. The two surfaces therefore disagree
+for brand-new stock. Aligning them changes a KPI definition fixed by the spec,
+so it is a product decision rather than a local fix.
 
-## 2026-11-23, Task 20 — the admin navigation wraps at 1440 px
+### 2026-11-23, Task 12 — document totals are 2dp, consumption valuations are 4dp
 
-Adding the eleventh navigation link made the admin header wrap to a second row
-even at 1440 px; the discomfort previously noted for 1280–1439 px now covers the
-reference desktop width. All links remain visible, but a compact admin menu
-(or moving reference data under one "Администрирование" entry) is worth doing
-before the final layout pass.
+`stock_documents.total_cost` and `stock_document_lines.total_cost` are
+`numeric(14,2)`, while `batch_consumptions.unit_cost`, `stock_movements.unit_cost`
+and FIFO allocation totals keep four decimals. A cost report can differ by up to
+a kopeck depending on whether it sums documents or consumption rows. Any future
+cost report must pick one source deliberately and state it; never mix both in one
+reconciliation.
 
-## 2026-11-23, Task 21 — catalog CSV export (done)
+### 2026-11-23, Task 19 — negative ledger balances are clamped in analytics
 
-§5.3's «Экспорт CSV» button is now on `/components` and carries `q`,
-`categoryId`, `manufacturerId`, `warehouseId`, `status`, `sort` and `dir` to
-`/reports/export/stock`. The stock report calls `catalog.listAll()`, the
-non-paginated variant of the same catalog service, so the file matches the
-screen including zero-balance rows under `status=all`/`status=zero`. There is no
-remaining follow-up for this requirement.
+`calculateReorder` rejects negative balances, but read-only analytics can meet
+one from a legacy fixture or a manually edited ledger, so the service clamps it
+to zero instead of failing the page. The alert pass does report a negative
+balance as a stockout, which is the operational signal; the catalog still hides
+the integrity problem. The issue document remains the only writer that must
+prevent negative balances.
 
-## 2026-11-23, Task 21 — the reference-date helper now has a fourth copy
+### 2026-11-23, Task 23 — a failed demo seed leaves partial data behind
 
-`src/services/reports.js` repeats the `ANALYTICS_REFERENCE_DATE` / Europe/Minsk
-"today" helper already present in `analytics.js`, `catalog.js` and `alerts.js`.
-Task 20 explicitly deferred extraction to the reports task, but doing it here
-would change three services outside this task's scope. Extract one shared clock
-module (`referenceDate()` and `todayInMinsk()`) in a dedicated refactor before
-the final analytics pass.
+Reference rows are inserted in one transaction and each stock document posts in
+its own transaction, so the whole seed is not atomic. If a document posting fails
+midway, `components` is already populated and the next `npm run db:seed` skips
+the database as "already seeded"; the operator must run `npm run db:reset`. A
+marker table or a single service-level transaction would make the seed
+resumable. Docker startup is protected in practice by `set -e`: a failed seed
+stops the container rather than serving a half-empty demo.
 
-## 2026-11-23, Task 21 — CSV exports are built fully in memory
+## Architecture and performance
+
+### 2026-11-23, Task 21 — the reference-date helper is copied in four services
+
+`analytics.js`, `catalog.js`, `alerts.js` and `reports.js` each repeat the
+`ANALYTICS_REFERENCE_DATE` / Europe/Minsk "today" logic. They must agree or
+different screens can describe different months. Extract one shared clock module
+(`referenceDate()` and `todayInMinsk()`) in a dedicated refactor before the final
+analytics pass.
+
+### 2026-11-23, Task 18 — monthly issue aggregation SQL is duplicated
+
+`components-read.js:listMonthlyConsumption` and
+`analytics.js:listMonthlyIssues` select issue quantity per month with the same
+document join and Europe/Minsk month bucket. Their filters and consumers differ,
+so both remain. Extract one query when a third caller needs the same aggregation.
+
+### 2026-11-23, Task 19 — the catalog recomputes ROP on every page load
+
+`catalog.list` runs the full pair calculation (two analytics queries plus the
+domain pass) even for the default name-sorted list. With the demo catalogue this
+is milliseconds; a much larger catalogue should compute ROP once per request,
+cache it briefly, or move the below-ROP filter into SQL with a materialised
+planning view. Deferred until a real dataset shows the cost.
+
+### 2026-11-23, Task 19 — the aggregate low-data flag is conservative
+
+In all-warehouse mode a component is flagged «мало данных» as soon as one
+participating pair has fewer than 14 days of consumption, because that pair's ROP
+comes from the `min_stock` fallback and is still summed into the row. The
+per-warehouse disclosure explains which pair is short, but a future iteration
+could expose a distinct "частично" state or exclude the fallback pair from the
+aggregate ROP while keeping its suggested quantity.
+
+### 2026-11-23, Task 21 — CSV exports are built fully in memory
 
 Every report loads all matching rows and materialises one string before sending
 it. That is fine for the demo dataset and keeps `toCsv` a pure function, but a
-multi-year audit export or a large movement range will grow memory linearly.
-The audit export has no date filter at all. If production volumes appear, add a
-date window to the audit card and stream rows into the response instead of
-joining them in memory.
+multi-year audit export has no date filter and grows linearly. If production
+volumes appear, add a date window to the audit card and stream rows into the
+response.
 
-## 2026-11-23, Task 22 — audit redaction happens on read, not on write
+## Operations and security
 
-The audit screen replaces values under password/hash/token/secret keys before
-rendering, so a writer that accidentally puts a secret into `details` cannot leak
-it through the UI. The value still lands in `audit_log.details` and stays there
-until the row is deleted; there is no retention job for audit rows. Move the same
-redaction into `auditService.record` when the audit retention task touches the
-service — doing it here would silently rewrite the contract every existing
-mutation relies on.
+### 2026-11-23, Task 24 — Docker backups need host-side tooling
 
-## 2026-11-23, Task 22 — the connection string is a pg_dump argv element
+The runtime image intentionally has no PostgreSQL client tools, so `npm run
+backup` inside the app container cannot run, and `backups/` is not a volume, so
+`/admin/backups` lists nothing in a Compose deployment. The documented Docker
+path uses `docker compose exec -T db pg_dump` on the host; mounting `./backups`
+into the app container would make the page useful again. Decide whether to add
+the client tools (larger image) or keep backups host-owned.
+
+### 2026-11-23, Task 22 — the connection string is a `pg_dump` argv element
 
 `scripts/backup.js` and `scripts/restore.js` pass `--dbname=<DATABASE_URL>`, so a
-local user who can list processes sees the database password while the tool is
-running. On a single-admin demo server this is acceptable, but a production
-deployment should split the URL into host/port/user/db arguments and supply the
-password through `PGPASSWORD` or a `.pgpass` file. The scripts never print the
-URL themselves.
+local user who can list processes sees the database password while the tool runs.
+The scripts never print the URL themselves. For a multi-user production host,
+split the URL into host/port/user/db arguments and supply the password through
+`PGPASSWORD` or a `.pgpass` file.
 
-## 2026-11-23, Task 22 — scheduler instructions live in DEPLOYMENT.md, which is not written yet
+### 2026-11-23, Task 22 — audit redaction happens on read, not on write
 
-Spec §5.17 asks DEPLOYMENT.md to describe cron and Windows Task Scheduler for
-`npm run backup`. This task added the scripts and the admin page that explains
-them, but deployment documentation is explicitly out of scope, so the scheduler
-section is still missing. The page tells the operator the retention is seven days
-and that dumps never leave the server; the scheduling recipe must be added with
-the Docker/Windows documentation task.
+The audit screen replaces values under password/hash/token/secret keys before
+rendering, so an accidental secret cannot leak through the UI, but the value
+still lands in `audit_log.details` and has no retention job. Move the same
+redaction into `auditService.record` when audit retention is implemented; doing
+it now would silently rewrite the contract every mutation relies on.
 
-## 2026-11-23, Task 22 fix — the backups page has no directory injection point
+### 2026-11-23, Task 24 — the `sharp` dev advisory remains open
 
-`showBackups` reads a module-level `backups/` path, so the integration test has
-to write a uniquely named fixture into the real (gitignored) directory and
-delete it afterwards. A test-only override would be cheap to read but would add
-a `BACKUP_DIR` contract that the backup/restore scripts should then honour too;
-that is a config change, not a test cleanup, so it is deferred. Until then the
-fixture name carries pid and timestamp, and cleanup runs in a `finally` block.
-The page itself no longer creates the directory on `GET`: it renders the empty
-state when `backups/` is absent, and `npm run backup` owns creation.
+`npm audit` reports one high-severity advisory in the `sharp` devDependency
+(`<=0.35.5-rc.1`); `npm audit --omit=dev` is clean. `sharp` is used only by
+`scripts/build-og.js` and is pruned from the runtime image. The fix is a breaking
+upgrade to `sharp@0.35.5`, which needs a dependency decision and a re-run of the
+OG build; the approved range is still `^0.34`.
 
-## 2026-11-23, Task 23 — every demo position classifies as XYZ class Z
+### 2026-11-22, Task 4 — rate-limit counters live in process memory
 
-The demo history starts with an opening receipt 150–170 days before
-`ANALYTICS_REFERENCE_DATE`, as the task brief requires. The XYZ window, however,
-is the six full calendar months before the reference month: for 22.11.2026 it is
-1 May – 1 November 2026. May therefore has zero demand for every position. Even
-a perfectly even June–October demand yields a coefficient of variation of about
-0.45, far above the Y limit of 0.25, so the ABC×XYZ matrix has only the Z column
-populated. This is a conflict between two explicit demo rules, not a seed bug.
-Fix it in the analytics/demo task by either (a) accepting an opening receipt
-around 210 days before the reference for a subset of positions, or (b) anchoring
-the XYZ window to the demo history start instead of the calendar. The seed was
-left literal to the brief so the conflict stays visible.
+The spec deploys one application container, so this is correct today; a
+multi-instance deployment would need a shared store. No action until the
+deployment shape changes.
 
-## 2026-11-23, Task 23 — a failed demo seed leaves partial data behind
+### 2026-11-23, Task 22 — the backups page has no directory injection point
 
-Reference rows are inserted in one transaction and each stock document posts in
-its own transaction, but the whole seed is not atomic. If a document posting
-fails midway (disk error, killed process), `components` is already populated and
-the next `npm run db:seed` skips the database as "already seeded". The operator
-must run `npm run db:reset` (which forces a truncate) to recover. A marker table
-or a single service-level transaction would make the seed resumable; that is a
-schema/service change and was out of scope here. Docker startup is protected in
-practice by `set -e`: a failed seed stops the container instead of serving a
-half-empty demo.
+`showBackups` reads a module-level `backups/` path, so the integration test writes
+a uniquely named fixture into the real (gitignored) directory and deletes it
+afterwards. A `BACKUP_DIR` override would be cheap to read but would then have to
+be honoured by the backup/restore scripts too; that is a config contract, not a
+test cleanup.
 
-## 2026-11-23, Task 23 — Docker Compose was verified without the compose plugin
+## Deliberate behaviours
 
-This environment has the Docker daemon but neither `docker compose` nor
-`docker-compose`. The image was therefore built with `docker build` and the
-entrypoint verified by running a fresh PostgreSQL 18 container plus the app
-container on a user-defined network with the same environment variables the
-compose file passes. Compose YAML itself was parsed, but `docker compose up`
-was not executed. Run the documented one-command path once on a machine with the
-compose plugin installed before shipping.
+### 2026-11-23, Task 14 — receipt rows with the same component are accepted
 
-## 2026-11-23, Task 23 fix — XYZ classes are now deliberately varied
+`postReceipt` accepts the same `componentId` twice in one document and creates a
+separate batch per line. The ledger and FIFO stay consistent, but an accidental
+duplicate row splits cost history. The form does not merge rows. If this becomes
+a real accounting problem, merge repeated lines client-side or reject duplicates
+in the service; both change the approved contract.
 
-The all-Z finding above is resolved in the fix pass. The history generator now
-assigns deterministic demand profiles: a third of the catalogue issues an equal
-quantity every month (X), a third follows a mild seasonal pattern (Y), and the
-remainder are spiky or dead (Z). The opening receipt moves to April so the full
-May–October XYZ window is covered. Current demo counts are X 20 / Y 18 / Z 22 and
-eight of the nine ABC×XYZ cells are populated; the seed test asserts all three
-classes and at least three non-empty matrix cells. The original entry stays here because the
-underlying rule conflict (six-month XYZ window versus the earlier 150–170-day
-opening receipt) is worth remembering when the demo window changes again.
+### 2026-11-23, Task 12 — the FIFO preview skips the inventory-freeze check
+
+`previewIssue` does not check for a live inventory count, while `postIssue`
+rejects it with 409. Showing the cost split on a frozen warehouse is still
+useful, and the posting path remains authoritative. The issue form may disable
+the preview during a count if operators find the later rejection confusing.
+
+### 2026-11-23, Task 11 — the freeze check runs before supplier/component validation
+
+On a frozen warehouse an archived component returns 409 «На складе идёт
+инвентаризация» instead of the 400 that names the real input problem. The 409 is
+still true and actionable; reordering only decides which error wins.

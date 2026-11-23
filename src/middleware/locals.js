@@ -8,7 +8,7 @@ import * as helpers from '../views/helpers.js';
  * `req.user` is populated by the auth middleware; guests get the public chrome
  * and no badge query. Authenticated requests pay one indexed count so the
  * navigation can show open alerts on every screen; the count is published as
- * `openAlertsCount` and mirrored to the legacy `alertCount` local.
+ * `openAlertsCount`.
  *
  * The helpers are bound here so templates can call them as plain functions
  * (`formatMoney(...)`) without importing anything or receiving them page by page.
@@ -16,8 +16,7 @@ import * as helpers from '../views/helpers.js';
 export async function attachLocals(req, res, next) {
   res.locals.currentUser = req.user ?? null;
   res.locals.currentPath = req.path;
-  res.locals.alertCount = res.locals.alertCount ?? 0;
-  res.locals.openAlertsCount = res.locals.openAlertsCount ?? res.locals.alertCount;
+  res.locals.openAlertsCount = res.locals.openAlertsCount ?? 0;
 
   res.locals.formatMoney = helpers.formatMoney;
   res.locals.formatQty = helpers.formatQty;
@@ -40,15 +39,12 @@ export async function attachLocals(req, res, next) {
   }
 
   try {
-    const openAlertsCount = await countOpen();
-    res.locals.alertCount = openAlertsCount;
-    res.locals.openAlertsCount = openAlertsCount;
+    res.locals.openAlertsCount = await countOpen();
     next();
   } catch (error) {
     // The badge is cosmetic. A count failure must not take down every
     // authenticated page: log it, show zero, and let the page render.
     (req.log ?? logger).warn({ err: error }, 'open alert count failed');
-    res.locals.alertCount = 0;
     res.locals.openAlertsCount = 0;
     next();
   }

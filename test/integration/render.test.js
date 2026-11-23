@@ -23,7 +23,7 @@ function renderAppLayout() {
     body: '<p>Обзор</p>',
     currentUser: { role: 'storekeeper', fullName: 'Марина Сидорова' },
     currentPath: '/stock',
-    alertCount: 3,
+    openAlertsCount: 3,
     flash: null,
     ...helpers,
     csrfField: () => '<input type="hidden" name="_csrf" value="test-token">',

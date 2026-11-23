@@ -14,7 +14,7 @@ test('attachLocals tolerates a request without req.user', () => {
   assert.equal(called, true);
   assert.equal(res.locals.currentUser, null);
   assert.equal(res.locals.currentPath, '/dashboard');
-  assert.equal(res.locals.alertCount, 0);
+  assert.equal(res.locals.openAlertsCount, 0);
   assert.equal(typeof res.locals.formatMoney, 'function');
   assert.equal(res.locals.csrfField(), '');
 });

@@ -246,8 +246,15 @@ function prepareRows(rows, { withCost, allowDuplicates, emptyMessage }) {
     const position = index + 1;
 
     const componentId = Number(row.componentId);
-    const validComponent = /^\d+$/.test(row.componentId) && Number.isSafeInteger(componentId);
-    if (!validComponent || componentId < 1) {
+    // `Number.isSafeInteger` alone accepts values above the `integer` column
+    // bound; passing one to the fallback list would turn a form typo into a
+    // PostgreSQL 22003.
+    const validComponent =
+      /^\d+$/.test(row.componentId) &&
+      Number.isSafeInteger(componentId) &&
+      componentId >= 1 &&
+      componentId <= INTEGER_MAX;
+    if (!validComponent) {
       addError(index, 'componentId', `Строка ${position}: выберите позицию.`);
     }
 
@@ -320,7 +327,7 @@ async function renderNew(res, type, state = {}) {
   // silently resetting the field to its placeholder.
   const submittedComponentIds = (Array.isArray(values.rows) ? values.rows : [])
     .map((row) => Number(row.componentId))
-    .filter((id) => Number.isSafeInteger(id) && id > 0);
+    .filter((id) => Number.isSafeInteger(id) && id > 0 && id <= INTEGER_MAX);
   const submittedSupplierId = Number(values.supplierId);
 
   const [warehouses, suppliers, components] = await Promise.all([

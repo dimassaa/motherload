@@ -173,7 +173,7 @@
       <%- csrfField() %>
 
       <% if (rows.length > 0) { %>
-        <div class="table-wrap">
+        <div class="table-wrap" tabindex="0">
           <table class="table inventory-table" data-inventory-table>
             <thead class="table__head">
               <tr>
@@ -296,7 +296,7 @@
       </div>
     </form>
   <% } else if (rows.length > 0) { %>
-    <div class="table-wrap inventory-screen-only">
+    <div class="table-wrap inventory-screen-only" tabindex="0">
       <table class="table inventory-table" data-inventory-table>
         <thead class="table__head">
           <tr>
@@ -415,7 +415,7 @@
         </p>
       <% } %>
     <% } else { %>
-      <div class="table-wrap">
+      <div class="table-wrap" tabindex="0">
         <table class="table">
           <thead class="table__head">
             <tr>
