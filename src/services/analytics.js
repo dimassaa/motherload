@@ -411,11 +411,8 @@ function buildReorderPairs(pairs, dailyRows, window) {
       categoryName: pair.categoryName,
       warehouse: {
         warehouseId: pair.warehouseId,
-        code: pair.warehouseCode,
         name: pair.warehouseName,
-        city: pair.warehouseCity,
       },
-      warehouseName: pair.warehouseName,
       balance,
       unitCost,
       leadTimeDays: pair.leadTimeDays,
@@ -490,7 +487,7 @@ function aggregateReorderRows(pairs) {
   const rows = [...byComponent.values()].map((group) => {
     const rop = Number(group.rop.toFixed(2));
     const warehouses = [...group.warehouses].sort((left, right) =>
-      left.warehouseName.localeCompare(right.warehouseName, 'ru'),
+      left.warehouse.name.localeCompare(right.warehouse.name, 'ru'),
     );
 
     return {
@@ -510,7 +507,10 @@ function aggregateReorderRows(pairs) {
       lowData: warehouses.some((pair) => pair.lowData),
       status: worstReorderStatus(warehouses),
       belowRop: warehouses.some((pair) => pair.belowRop),
-      anyWarehouseBelowRop: warehouses.some((pair) => pair.belowRop),
+      // Counts for the table hint: a total can look healthy while one
+      // warehouse is empty or below its own point.
+      warehousesBelowRop: warehouses.filter((pair) => pair.belowRop).length,
+      warehousesZero: warehouses.filter((pair) => pair.status === 'zero').length,
       warehouses,
       warehouseCount: warehouses.length,
     };
@@ -545,8 +545,7 @@ function compareReorderRows(left, right) {
  *   window: {
  *     start: string, end: string, endExclusive: string,
  *     days: number, referenceDate: string
- *   },
- *   pairCount: number
+ *   }
  * }>}
  */
 export async function getReorder(filters = {}) {
@@ -569,10 +568,10 @@ export async function getReorder(filters = {}) {
 
   if (warehouseId) {
     pairRows.sort(compareReorderRows);
-    return { rows: pairRows, window, pairCount: pairRows.length };
+    return { rows: pairRows, window };
   }
 
-  return { rows: aggregateReorderRows(pairRows), window, pairCount: pairRows.length };
+  return { rows: aggregateReorderRows(pairRows), window };
 }
 
 /* ----------------------------------------------------------------- Dashboard */
@@ -630,7 +629,7 @@ export async function getDashboard() {
       name: pair.name,
       unit: pair.unit,
       warehouseId: pair.warehouse.warehouseId,
-      warehouseName: pair.warehouseName,
+      warehouseName: pair.warehouse.name,
       balance: pair.balance,
       rop: pair.rop,
       suggested: pair.suggested,
@@ -642,7 +641,7 @@ export async function getDashboard() {
       stockValue: totals.stockValue,
       cogs90: totals.cogs90,
       deadValue: totals.deadValue,
-      belowRopCount: reorder.rows.filter((row) => row.anyWarehouseBelowRop).length,
+      belowRopCount: reorder.rows.filter((row) => row.belowRop).length,
       turnoverYear: kpi.turnoverYear,
       coverageDays: kpi.coverageDays,
     },

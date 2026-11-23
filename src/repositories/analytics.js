@@ -182,14 +182,14 @@ export async function listMonthlyIssues({ warehouseId = null, categoryId = null,
   }));
 }
 
-const ACTIVITY_WINDOW = "interval '180 days'";
-
 /**
  * Component/warehouse pairs that take part in reorder planning.
  *
- * A pair participates when it holds stock or moved in the last 180 days, the
- * same participation rule the catalog and future alerts use. Empty, idle
- * warehouses must not create shortages nobody can act on.
+ * A pair participates when it holds stock or moved on or after `activityStart`,
+ * the inclusive lower bound of the 180-day window computed by the service.
+ * The bound is passed in as a plain date: applying another interval here would
+ * silently widen the window to 360 days. Empty, idle warehouses must not create
+ * shortages nobody can act on.
  *
  * `first_issue_date` is the first *consumption* day, not the first receipt: the
  * demand statistics are only trustworthy once the position has actually been
@@ -200,13 +200,12 @@ const ACTIVITY_WINDOW = "interval '180 days'";
  *   warehouseId?: number|null,
  *   categoryId?: number|null,
  *   activityStart: string,
- * }} filters `activityStart` is the inclusive lower bound of the 180-day window
+ * }} filters `activityStart` is the inclusive lower bound (`YYYY-MM-DD`)
  * @returns {Promise<Array<{
  *   componentId: number, sku: string, name: string, unit: string,
  *   categoryName: string|null, minStock: number, purchasePrice: string,
- *   leadTimeDays: number, warehouseId: number, warehouseCode: string,
- *   warehouseName: string, warehouseCity: string, qty: number,
- *   avgCost: string|null, firstIssueDate: string|null
+ *   leadTimeDays: number, warehouseId: number, warehouseName: string,
+ *   qty: number, avgCost: string|null, firstIssueDate: string|null
  * }>>}
  */
 export async function listReorderPairs({ warehouseId = null, categoryId = null, activityStart }) {
@@ -225,9 +224,7 @@ export async function listReorderPairs({ warehouseId = null, categoryId = null, 
          coalesce(c.lead_time_days, s.lead_time_days, 1) as lead_time_days,
          cat.name as category_name,
          vw.warehouse_id,
-         w.code as warehouse_code,
          w.name as warehouse_name,
-         w.city as warehouse_city,
          vw.qty,
          vw.avg_cost
        from v_component_warehouse_stock vw
@@ -245,8 +242,7 @@ export async function listReorderPairs({ warehouseId = null, categoryId = null, 
              from stock_movements m
              where m.component_id = vw.component_id
                and m.warehouse_id = vw.warehouse_id
-               and m.created_at >=
-                 (($3::date - ${ACTIVITY_WINDOW})::timestamp at time zone '${DISPLAY_ZONE}')
+               and m.created_at >= ($3::date::timestamp at time zone '${DISPLAY_ZONE}')
            )
          )
      )
@@ -279,9 +275,7 @@ export async function listReorderPairs({ warehouseId = null, categoryId = null, 
     purchasePrice: row.purchase_price,
     leadTimeDays: row.lead_time_days,
     warehouseId: row.warehouse_id,
-    warehouseCode: row.warehouse_code,
     warehouseName: row.warehouse_name,
-    warehouseCity: row.warehouse_city,
     qty: row.qty,
     avgCost: row.avg_cost ?? null,
     firstIssueDate: row.first_issue_date ?? null,

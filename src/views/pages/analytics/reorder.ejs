@@ -130,7 +130,7 @@
                         <ul class="warehouse-breakdown">
                           <% for (const pair of row.warehouses) { %>
                             <li class="warehouse-breakdown__item">
-                              <span class="warehouse-breakdown__name"><%= pair.warehouseName %></span>
+                              <span class="warehouse-breakdown__name"><%= pair.warehouse.name %></span>
                               <span>
                                 остаток <%= formatQty(pair.balance) %> ·
                                 ROP <%= formatNumber(pair.rop, 2) %> ·
@@ -147,7 +147,7 @@
                     <% } %>
                   </td>
                   <% if (byWarehouse) { %>
-                    <td class="table__cell"><%= row.warehouseName %></td>
+                    <td class="table__cell"><%= row.warehouse.name %></td>
                   <% } %>
                   <td class="table__cell table__cell--num">
                     <%= formatQty(row.balance) %> <%= row.unit %>
@@ -165,6 +165,17 @@
                   </td>
                   <td class="table__cell">
                     <%- include('../../partials/status-chip', { status: row.status }) %>
+                    <% if (!byWarehouse && row.status === 'zero' && row.balance > 0) { %>
+                      <span class="status-hint">
+                        нет остатка на <%= formatQty(row.warehousesZero) %> из
+                        <%= formatQty(row.warehouseCount) %> складов
+                      </span>
+                    <% } else if (!byWarehouse && row.status === 'below_rop' && row.balance >= row.rop) { %>
+                      <span class="status-hint">
+                        <%= formatQty(row.warehousesBelowRop) %> из
+                        <%= formatQty(row.warehouseCount) %> складов ниже ROP
+                      </span>
+                    <% } %>
                   </td>
                 </tr>
               <% } %>

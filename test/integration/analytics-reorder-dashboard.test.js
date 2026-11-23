@@ -235,6 +235,170 @@ test('reorder row shows ROP, safety stock and suggested quantity', async () => {
   assert.deepEqual(byCategory.rows, []);
 });
 
+test('reorder uses an 180-day activity window, not 360', async () => {
+  const references = await seedReferences();
+
+  // Exactly 180 days before the reference date is the inclusive edge: the pair
+  // still participates. One day older must fall out; otherwise a double
+  // subtraction in the service/repository pair would silently keep it for 360
+  // days.
+  const boundary = await createComponent(references, {
+    sku: 'CPU-EDGE-180',
+    name: 'Позиция на границе окна',
+    minStock: 20,
+  });
+  const stale = await createComponent(references, {
+    sku: 'CPU-STALE-181',
+    name: 'Позиция за окном активности',
+    minStock: 20,
+  });
+
+  for (const component of [boundary, stale]) {
+    const at = `${component.id === boundary.id ? '2026-05-26' : '2026-05-25'}T10:00:00+03:00`;
+    await query(
+      `insert into stock_movements (component_id, warehouse_id, qty_delta, unit_cost, created_at)
+       values ($1, $2, 10, '10.0000', $3::timestamptz),
+              ($1, $2, -10, '10.0000', $3::timestamptz)`,
+      [component.id, references.minsk.id, at],
+    );
+  }
+
+  const { rows } = await getReorder({});
+  assert.ok(
+    rows.some((row) => row.sku === 'CPU-EDGE-180'),
+    'the boundary day still participates',
+  );
+  assert.ok(
+    !rows.some((row) => row.sku === 'CPU-STALE-181'),
+    'a movement 181 days old must not participate',
+  );
+
+  const edgeRow = rows.find((row) => row.sku === 'CPU-EDGE-180');
+  assert.equal(edgeRow.balance, 0);
+  assert.equal(edgeRow.rop, 20);
+  assert.equal(edgeRow.lowData, true);
+
+  const agent = await signInAsAnalyst(references);
+  const reorderPage = await agent.get('/analytics/reorder');
+  assert.match(reorderPage.text, /CPU-EDGE-180/);
+  assert.doesNotMatch(reorderPage.text, /CPU-STALE-181/);
+
+  const { attention } = await getDashboard();
+  assert.ok(attention.some((row) => row.sku === 'CPU-EDGE-180'));
+  assert.ok(!attention.some((row) => row.sku === 'CPU-STALE-181'));
+
+  const catalog = await agent.get('/components?status=below_rop');
+  assert.match(catalog.text, /CPU-EDGE-180/);
+  assert.doesNotMatch(catalog.text, /CPU-STALE-181/);
+});
+
+test('reorder aggregates ROP, suggested and max EOQ across warehouses', async () => {
+  const references = await seedReferences();
+  const component = await createComponent(references, {
+    sku: 'CPU-MULTI-01',
+    name: 'Процессор на двух складах',
+    minStock: 0,
+  });
+
+  // Minsk: 2 units/day -> avg 2, ROP 10, EOQ 60.42, balance 5 -> 61 to order.
+  await insertReceipt({
+    componentId: component.id,
+    warehouseId: references.minsk.id,
+    qtyReceived: 185,
+    qtyRemaining: 5,
+  });
+  await insertDailyDemand({
+    componentId: component.id,
+    warehouseId: references.minsk.id,
+    quantity: 2,
+    userId: references.user.id,
+  });
+
+  // Gomel: 1 unit/day -> avg 1, ROP 5, EOQ 42.72, balance 3 -> 43 to order.
+  await insertReceipt({
+    componentId: component.id,
+    warehouseId: references.gomel.id,
+    qtyReceived: 93,
+    qtyRemaining: 3,
+  });
+  await insertDailyDemand({
+    componentId: component.id,
+    warehouseId: references.gomel.id,
+    quantity: 1,
+    userId: references.user.id,
+  });
+
+  const minsk = await getReorder({ warehouseId: references.minsk.id });
+  const gomel = await getReorder({ warehouseId: references.gomel.id });
+  const [minskRow] = minsk.rows;
+  const [gomelRow] = gomel.rows;
+
+  assert.deepEqual(
+    [minskRow.avgDaily, minskRow.rop, minskRow.eoq, minskRow.suggested],
+    [2, 10, 60.42, 61],
+  );
+  assert.deepEqual(
+    [gomelRow.avgDaily, gomelRow.rop, gomelRow.eoq, gomelRow.suggested],
+    [1, 5, 42.72, 43],
+  );
+
+  const { rows } = await getReorder({});
+  assert.equal(rows.length, 1);
+  const aggregate = rows[0];
+  assert.equal(aggregate.balance, 8);
+  assert.equal(aggregate.avgDaily, 3);
+  assert.equal(aggregate.rop, 15);
+  assert.equal(aggregate.suggested, 104);
+  assert.equal(aggregate.eoq, 60.42, 'EOQ is a single order size and is never summed');
+  assert.equal(aggregate.status, 'below_rop');
+  assert.equal(aggregate.warehouseCount, 2);
+  assert.equal(aggregate.warehousesBelowRop, 2);
+});
+
+test('reorder explains an aggregate status that contradicts the total', async () => {
+  const references = await seedReferences();
+  const component = await createComponent(references, {
+    sku: 'CPU-SPLIT-01',
+    name: 'Процессор с пустым региональным складом',
+    minStock: 0,
+  });
+
+  await insertReceipt({
+    componentId: component.id,
+    warehouseId: references.minsk.id,
+    qtyReceived: 100,
+    qtyRemaining: 100,
+  });
+
+  // The Gomel pair is fully consumed, so the aggregate row would show 100 units
+  // and a bare "Нет остатка" chip. The hint must name the affected warehouse.
+  await insertReceipt({
+    componentId: component.id,
+    warehouseId: references.gomel.id,
+    qtyReceived: 1,
+    qtyRemaining: 0,
+    receivedAt: '2026-10-30',
+  });
+  await insertIssue({
+    componentId: component.id,
+    warehouseId: references.gomel.id,
+    qty: 1,
+    at: '2026-11-01T10:00:00+03:00',
+    userId: references.user.id,
+  });
+
+  const { rows } = await getReorder({});
+  const row = rows.find((item) => item.sku === 'CPU-SPLIT-01');
+  assert.equal(row.balance, 100);
+  assert.equal(row.status, 'zero');
+  assert.equal(row.warehousesZero, 1);
+  assert.equal(row.warehouseCount, 2);
+
+  const agent = await signInAsAnalyst(references);
+  const page = await agent.get('/analytics/reorder');
+  assert.match(page.text, /нет остатка на\s+1 из\s+2 складов/);
+});
+
 test('reorder marks a position with thin history as low data', async () => {
   const references = await seedReferences();
   const component = await createComponent(references, {
@@ -478,4 +642,54 @@ test('catalog below_rop filter uses the reorder calculation and keeps other stat
   assert.equal(fallback.status, 200);
   assert.match(fallback.text, /CPU-ROP-01/);
   assert.match(fallback.text, /CPU-OK-01/);
+});
+
+test('catalog sorts by ROP and keeps positions without planning data last', async () => {
+  const references = await seedReferences();
+
+  // No issues: each position falls back to its min_stock, which makes the ROP
+  // values deterministic (20 and 5).
+  const high = await createComponent(references, {
+    sku: 'ROP-HIGH-01',
+    name: 'Позиция с высокой точкой заказа',
+    minStock: 20,
+  });
+  await insertReceipt({
+    componentId: high.id,
+    warehouseId: references.minsk.id,
+    qtyReceived: 10,
+    qtyRemaining: 10,
+  });
+
+  const low = await createComponent(references, {
+    sku: 'ROP-LOW-01',
+    name: 'Позиция с низкой точкой заказа',
+    minStock: 5,
+  });
+  await insertReceipt({
+    componentId: low.id,
+    warehouseId: references.minsk.id,
+    qtyReceived: 10,
+    qtyRemaining: 10,
+  });
+
+  // No stock and no movements: there is no planning row, so ROP is unknown.
+  await createComponent(references, {
+    sku: 'ROP-NONE-01',
+    name: 'Позиция без планирования',
+    minStock: 0,
+  });
+
+  const agent = await signInAsAnalyst(references);
+
+  const asc = await agent.get('/components?sort=rop&dir=asc');
+  assert.equal(asc.status, 200);
+  assert.ok(asc.text.indexOf('ROP-LOW-01') > -1);
+  assert.ok(asc.text.indexOf('ROP-LOW-01') < asc.text.indexOf('ROP-HIGH-01'));
+  assert.ok(asc.text.indexOf('ROP-HIGH-01') < asc.text.indexOf('ROP-NONE-01'));
+
+  const desc = await agent.get('/components?sort=rop&dir=desc');
+  assert.equal(desc.status, 200);
+  assert.ok(desc.text.indexOf('ROP-HIGH-01') < desc.text.indexOf('ROP-LOW-01'));
+  assert.ok(desc.text.indexOf('ROP-LOW-01') < desc.text.indexOf('ROP-NONE-01'));
 });

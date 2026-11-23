@@ -47,8 +47,10 @@ function roundTo(decimal, places) {
  * must be exactly `DEMAND_WINDOW_DAYS` (90) entries with quiet days included as
  * zeros, because spec §6.6 fixes the divisor at 90. A shorter array would
  * inflate the average and silently raise the reorder point, so it is rejected.
- * `historyDays` is separate: it counts days since the first movement and only
- * decides whether the statistics are trustworthy (`lowData`).
+ * `historyDays` is separate: it counts days since the first issue and only
+ * decides whether the statistics are trustworthy (`lowData`). A receipt alone
+ * is not demand history, so a position that was never sold still falls back to
+ * the minimum stock.
  *
  * With little history the demand statistics cannot be trusted, so the reorder
  * point falls back to the configured minimum stock and the suggestion tops the
