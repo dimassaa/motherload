@@ -15,6 +15,7 @@ export function attachLocals(req, res, next) {
 
   res.locals.formatMoney = helpers.formatMoney;
   res.locals.formatQty = helpers.formatQty;
+  res.locals.formatNumber = helpers.formatNumber;
   res.locals.formatDate = helpers.formatDate;
   res.locals.formatDateTime = helpers.formatDateTime;
   res.locals.formatPct = helpers.formatPct;

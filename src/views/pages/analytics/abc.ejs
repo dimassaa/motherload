@@ -1,0 +1,151 @@
+<%
+  const xyzHref = queryString('/analytics/xyz', {
+    warehouseId: filters.warehouseId,
+    categoryId: filters.categoryId,
+  });
+  const sharePct = (value) => formatPct(value * 100, 2);
+%>
+<section aria-labelledby="abc-title">
+  <div class="page-header">
+    <div>
+      <p class="axis-label">
+        <span>[ Аналитика ]</span>
+        <span>Стоимость текущих остатков</span>
+      </p>
+      <h1 id="abc-title" class="page-header__title">ABC-анализ</h1>
+      <p class="page-header__meta">
+        Позиций: <%= formatQty(summary.total.count) %>
+        · Стоимость: <%- money(summary.total.value) %>
+      </p>
+    </div>
+    <a class="btn btn--ghost btn--sm" href="<%= xyzHref %>">XYZ-анализ →</a>
+  </div>
+
+  <form class="filter-bar" method="get" action="/analytics/abc" role="search" aria-label="Фильтры ABC-анализа">
+    <div class="form-field">
+      <label class="form-field__label" for="abc-warehouse">Склад</label>
+      <select class="form-field__select" id="abc-warehouse" name="warehouseId">
+        <option value="" <%- filters.warehouseId === null ? 'selected' : '' %>>Все склады</option>
+        <% for (const warehouse of options.warehouses) { %>
+          <option
+            value="<%= warehouse.id %>"
+            <%- String(filters.warehouseId ?? '') === String(warehouse.id) ? 'selected' : '' %>
+          >
+            <%= warehouse.name %><%= warehouse.isActive ? '' : ' (неактивен)' %>
+          </option>
+        <% } %>
+      </select>
+    </div>
+
+    <div class="form-field">
+      <label class="form-field__label" for="abc-category">Категория</label>
+      <select class="form-field__select" id="abc-category" name="categoryId">
+        <option value="" <%- filters.categoryId === null ? 'selected' : '' %>>Все категории</option>
+        <% for (const category of options.categories) { %>
+          <option
+            value="<%= category.id %>"
+            <%- String(filters.categoryId ?? '') === String(category.id) ? 'selected' : '' %>
+          >
+            <%= category.name %>
+          </option>
+        <% } %>
+      </select>
+    </div>
+
+    <div class="filter-bar__actions">
+      <button class="btn btn--outline btn--sm" type="submit">Показать</button>
+      <a class="btn btn--ghost btn--sm" href="/analytics/abc">Сбросить</a>
+    </div>
+  </form>
+
+  <% if (rows.length === 0) { %>
+    <%- include('../../partials/empty-state', {
+      title: 'Пока нет остатков',
+      text: 'Для выбранных склада и категории нет партий с положительным остатком. Измените фильтры или примите товар на склад.',
+    }) %>
+  <% } else { %>
+    <div class="card-stack">
+      <div class="card-grid">
+        <section class="card" aria-labelledby="abc-summary-a">
+          <h2 id="abc-summary-a" class="card__title">
+            <span class="tag tag--stamp">A</span> Высокая стоимость
+          </h2>
+          <p class="stat-value"><%= formatQty(summary.A.count) %> поз.</p>
+          <p class="card__text"><%- money(summary.A.value) %></p>
+          <p class="card__text">Дают первые 80 % накопленной стоимости.</p>
+        </section>
+
+        <section class="card" aria-labelledby="abc-summary-b">
+          <h2 id="abc-summary-b" class="card__title">
+            <span class="tag tag--stamp">B</span> Средняя стоимость
+          </h2>
+          <p class="stat-value"><%= formatQty(summary.B.count) %> поз.</p>
+          <p class="card__text"><%- money(summary.B.value) %></p>
+          <p class="card__text">Накопленная доля от 80 % до 95 %.</p>
+        </section>
+
+        <section class="card" aria-labelledby="abc-summary-c">
+          <h2 id="abc-summary-c" class="card__title">
+            <span class="tag tag--stamp">C</span> Низкая стоимость
+          </h2>
+          <p class="stat-value"><%= formatQty(summary.C.count) %> поз.</p>
+          <p class="card__text"><%- money(summary.C.value) %></p>
+          <p class="card__text">Остаток стоимости после 95 %; сюда же попадают позиции с нулевой стоимостью.</p>
+        </section>
+      </div>
+
+      <section class="card" aria-labelledby="abc-chart-title">
+        <h2 id="abc-chart-title" class="card__title">Диаграмма Парето</h2>
+        <p class="card__text">
+          Столбцы — стоимость позиции в BYN, линия — накопленная доля стоимости в процентах.
+        </p>
+        <div class="chart-panel">
+          <canvas
+            data-chart="<%= JSON.stringify(chart) %>"
+            role="img"
+            aria-label="Столбцы стоимости позиций и линия накопленной доли"
+          ></canvas>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="abc-table-title">
+        <h2 id="abc-table-title" class="card__title">Ранжирование позиций</h2>
+        <div class="table-wrap">
+          <table class="table">
+            <thead class="table__head">
+              <tr>
+                <th class="table__heading table__cell--num" scope="col">Место</th>
+                <th class="table__heading" scope="col">SKU</th>
+                <th class="table__heading" scope="col">Название</th>
+                <th class="table__heading table__cell--num" scope="col">Стоимость</th>
+                <th class="table__heading table__cell--num" scope="col">Доля</th>
+                <th class="table__heading table__cell--num" scope="col">Накопленная доля</th>
+                <th class="table__heading" scope="col">Класс</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% for (const row of rows) { %>
+                <tr class="table__row">
+                  <td class="table__cell table__cell--num"><%= row.rank %></td>
+                  <td class="table__cell table__cell--code"><%= row.sku %></td>
+                  <td class="table__cell">
+                    <%= row.name %>
+                    <% if (!row.isActive) { %>
+                      <span class="table__cell--muted">· в архиве</span>
+                    <% } %>
+                  </td>
+                  <td class="table__cell table__cell--num"><%- money(row.value) %></td>
+                  <td class="table__cell table__cell--num"><%= sharePct(row.share) %></td>
+                  <td class="table__cell table__cell--num"><%= sharePct(row.cumulativeShare) %></td>
+                  <td class="table__cell">
+                    <span class="tag tag--stamp" aria-label="Класс <%= row.class %>"><%= row.class %></span>
+                  </td>
+                </tr>
+              <% } %>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  <% } %>
+</section>
