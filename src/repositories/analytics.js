@@ -1,12 +1,12 @@
 import { pool } from '../db/pool.js';
 
 /**
- * Read models for ABC and XYZ analysis.
+ * Read models for the analytics screens.
  *
- * Both analyses share the same warehouse/category filters, but read different
- * sources: ABC values current stock from FIFO batches, XYZ reads issue demand
- * from the movement ledger. Nothing is stored as a separate analytics balance,
- * so the pages cannot drift from the stock read models.
+ * ABC values current stock from FIFO batches, XYZ reads issue demand from the
+ * movement ledger, and reorder planning joins the two per component/warehouse
+ * pair. Nothing is stored as a separate analytics balance, so the pages cannot
+ * drift from the stock read models.
  */
 
 // PostgreSQL sessions do not inherit the Node `TZ`; month and day boundaries
@@ -179,5 +179,279 @@ export async function listMonthlyIssues({ warehouseId = null, categoryId = null,
     componentId: row.component_id,
     month: row.month,
     qty: row.qty,
+  }));
+}
+
+/**
+ * Component/warehouse pairs that take part in reorder planning.
+ *
+ * A pair participates when it holds stock or moved on or after `activityStart`,
+ * the inclusive lower bound of the 180-day window computed by the service.
+ * The bound is passed in as a plain date: applying another interval here would
+ * silently widen the window to 360 days. Empty, idle warehouses must not create
+ * shortages nobody can act on.
+ *
+ * `first_issue_date` is the first *consumption* day, not the first receipt: the
+ * demand statistics are only trustworthy once the position has actually been
+ * issued. A batch that arrived a year ago but never sold is still "low data",
+ * and the service falls back to `min_stock` exactly as §6.6 requires.
+ *
+ * @param {{
+ *   warehouseId?: number|null,
+ *   categoryId?: number|null,
+ *   activityStart: string,
+ * }} filters `activityStart` is the inclusive lower bound (`YYYY-MM-DD`)
+ * @returns {Promise<Array<{
+ *   componentId: number, sku: string, name: string, unit: string,
+ *   categoryName: string|null, minStock: number, purchasePrice: string,
+ *   leadTimeDays: number, warehouseId: number, warehouseName: string,
+ *   qty: number, avgCost: string|null, firstIssueDate: string|null
+ * }>>}
+ */
+export async function listReorderPairs({ warehouseId = null, categoryId = null, activityStart }) {
+  const { rows } = await db().query(
+    `with participants as (
+       select
+         vw.component_id,
+         c.sku,
+         c.name,
+         c.unit,
+         c.min_stock,
+         c.purchase_price,
+         -- Component lead time wins, the default supplier is the fallback. A
+         -- position without either still needs a finite horizon, so one day is
+         -- the explicit minimum rather than an invented assumption.
+         coalesce(c.lead_time_days, s.lead_time_days, 1) as lead_time_days,
+         cat.name as category_name,
+         vw.warehouse_id,
+         w.name as warehouse_name,
+         vw.qty,
+         vw.avg_cost
+       from v_component_warehouse_stock vw
+       join components c on c.id = vw.component_id
+       join warehouses w on w.id = vw.warehouse_id
+       left join categories cat on cat.id = c.category_id
+       left join suppliers s on s.id = c.default_supplier_id
+       where c.is_active
+         and ($1::int is null or vw.warehouse_id = $1)
+         and ($2::int is null or c.category_id = $2)
+         and (
+           vw.qty > 0
+           or exists (
+             select 1
+             from stock_movements m
+             where m.component_id = vw.component_id
+               and m.warehouse_id = vw.warehouse_id
+               and m.created_at >= ($3::date::timestamp at time zone '${DISPLAY_ZONE}')
+           )
+         )
+     )
+     select
+       p.*,
+       first_issue.first_issue_date
+     from participants p
+     left join lateral (
+       select (min(m.created_at) at time zone '${DISPLAY_ZONE}')::date as first_issue_date
+       from stock_movements m
+       join stock_documents d on d.id = m.document_id
+       where m.component_id = p.component_id
+         and m.warehouse_id = p.warehouse_id
+         and d.type = 'issue'
+         and m.qty_delta < 0
+     ) first_issue on true
+     order by p.name, p.component_id, p.warehouse_name, p.warehouse_id`,
+    [warehouseId, categoryId, activityStart],
+  );
+
+  return rows.map((row) => ({
+    componentId: row.component_id,
+    sku: row.sku,
+    name: row.name,
+    unit: row.unit,
+    categoryName: row.category_name ?? null,
+    minStock: row.min_stock,
+    // Money stays a PostgreSQL numeric string; the domain converts it with
+    // decimal.js and never through Number.
+    purchasePrice: row.purchase_price,
+    leadTimeDays: row.lead_time_days,
+    warehouseId: row.warehouse_id,
+    warehouseName: row.warehouse_name,
+    qty: row.qty,
+    avgCost: row.avg_cost ?? null,
+    firstIssueDate: row.first_issue_date ?? null,
+  }));
+}
+
+/**
+ * Issued quantity per component, warehouse and calendar day.
+ *
+ * The day bucket is produced in Europe/Minsk so a movement just after local
+ * midnight lands on the right day. Only issue documents count as demand.
+ *
+ * @param {{
+ *   warehouseId?: number|null,
+ *   categoryId?: number|null,
+ *   start: string,
+ *   end: string,
+ * }} filters `start` inclusive, `end` exclusive, both `YYYY-MM-DD`
+ * @returns {Promise<Array<{
+ *   componentId: number, warehouseId: number, day: string, qty: number
+ * }>>}
+ */
+export async function listDailyIssues({ warehouseId = null, categoryId = null, start, end }) {
+  const { rows } = await db().query(
+    `select
+       m.component_id,
+       m.warehouse_id,
+       (date_trunc('day', m.created_at at time zone '${DISPLAY_ZONE}'))::date as day,
+       sum(-m.qty_delta)::integer as qty
+     from stock_movements m
+     join stock_documents d on d.id = m.document_id
+     join components c on c.id = m.component_id
+     where d.type = 'issue'
+       and m.qty_delta < 0
+       and ($1::int is null or m.warehouse_id = $1)
+       and ($2::int is null or c.category_id = $2)
+       and m.created_at >= ($3::date::timestamp at time zone '${DISPLAY_ZONE}')
+       and m.created_at < ($4::date::timestamp at time zone '${DISPLAY_ZONE}')
+     group by m.component_id, m.warehouse_id, 3
+     order by m.component_id, m.warehouse_id, 3`,
+    [warehouseId, categoryId, start, end],
+  );
+
+  return rows.map((row) => ({
+    componentId: row.component_id,
+    warehouseId: row.warehouse_id,
+    day: row.day,
+    qty: row.qty,
+  }));
+}
+
+/**
+ * Stock value, 90-day COGS and dead-stock value for the dashboard KPI cards.
+ *
+ * COGS comes from the movement ledger (`qty_delta * unit_cost`) rather than a
+ * document total so it uses the same FIFO cost that the stock value uses. A
+ * position is dead when it still holds value and has no issue in the window;
+ * the whole component value counts once, not per warehouse, because the KPI is
+ * about frozen money, not about locations.
+ *
+ * @param {{ start: string, end: string }} window `start` inclusive, `end` exclusive
+ * @returns {Promise<{ stockValue: string, cogs90: string, deadValue: string }>}
+ */
+export async function getKpiTotals({ start, end }) {
+  const { rows } = await db().query(
+    `select
+       coalesce(
+         (select round(sum(b.qty_remaining * b.unit_cost), 4)
+          from stock_batches b
+          where b.qty_remaining > 0),
+         0
+       )::numeric(16,4) as stock_value,
+       coalesce(
+         (select round(sum(-m.qty_delta * m.unit_cost), 4)
+          from stock_movements m
+          join stock_documents d on d.id = m.document_id
+          where d.type = 'issue'
+            and m.qty_delta < 0
+            and m.created_at >= ($1::date::timestamp at time zone '${DISPLAY_ZONE}')
+            and m.created_at < ($2::date::timestamp at time zone '${DISPLAY_ZONE}')),
+         0
+       )::numeric(16,4) as cogs_90,
+       coalesce(
+         (select round(sum(b.qty_remaining * b.unit_cost), 4)
+          from stock_batches b
+          where b.qty_remaining > 0
+            and not exists (
+              select 1
+              from stock_movements m
+              join stock_documents d on d.id = m.document_id
+              where m.component_id = b.component_id
+                and d.type = 'issue'
+                and m.qty_delta < 0
+                and m.created_at >= ($1::date::timestamp at time zone '${DISPLAY_ZONE}')
+                and m.created_at < ($2::date::timestamp at time zone '${DISPLAY_ZONE}')
+            )),
+         0
+       )::numeric(16,4) as dead_value
+     `,
+    [start, end],
+  );
+
+  const row = rows[0];
+  return {
+    stockValue: row.stock_value,
+    cogs90: row.cogs_90,
+    deadValue: row.dead_value,
+  };
+}
+
+/**
+ * Current stock value per category, largest first.
+ *
+ * A category only appears when it holds positive value: an empty bar would be
+ * noise on the dashboard chart. Components without a category fall into one
+ * explicit "Без категории" bucket instead of vanishing from the total.
+ *
+ * @returns {Promise<Array<{ name: string, value: string }>>}
+ */
+export async function listCategoryValues() {
+  const { rows } = await db().query(
+    `select
+       coalesce(cat.name, 'Без категории') as name,
+       round(sum(vw.value), 4)::numeric(16,4) as value
+     from v_component_warehouse_stock vw
+     join components c on c.id = vw.component_id
+     left join categories cat on cat.id = c.category_id
+     where vw.value > 0
+     group by 1
+     order by value desc, name`,
+  );
+
+  return rows.map((row) => ({ name: row.name, value: row.value }));
+}
+
+/**
+ * The newest ledger movements for the dashboard feed.
+ *
+ * A movement may have no document (inventory adjustment), so the document and
+ * author joins are optional; the view renders the missing type as a correction
+ * instead of an empty cell.
+ *
+ * @param {number} limit hard upper bound chosen by the service
+ * @returns {Promise<Array<Record<string, unknown>>>}
+ */
+export async function listRecentMovements(limit) {
+  const { rows } = await db().query(
+    `select
+       m.id,
+       m.created_at,
+       m.qty_delta,
+       d.type as document_type,
+       d.number as document_number,
+       c.sku,
+       c.name as component_name,
+       w.name as warehouse_name,
+       u.full_name as user_name
+     from stock_movements m
+     join components c on c.id = m.component_id
+     join warehouses w on w.id = m.warehouse_id
+     left join stock_documents d on d.id = m.document_id
+     left join users u on u.id = d.created_by
+     order by m.created_at desc, m.id desc
+     limit $1`,
+    [limit],
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    createdAt: row.created_at,
+    qtyDelta: row.qty_delta,
+    documentType: row.document_type ?? null,
+    documentNumber: row.document_number ?? null,
+    sku: row.sku,
+    componentName: row.component_name,
+    warehouseName: row.warehouse_name,
+    userName: row.user_name ?? null,
   }));
 }

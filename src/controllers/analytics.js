@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import * as directoriesService from '../services/directories.js';
-import { getAbc, getXyz } from '../services/analytics.js';
+import { getAbc, getReorder, getXyz } from '../services/analytics.js';
 
 /**
  * Query parsing for the analytics screens.
@@ -61,6 +61,25 @@ export async function showXyz(req, res, next) {
       options,
       // XYZ renders a matrix, not a canvas: the 206 KB Chart.js bundle would be
       // dead weight on every XYZ page, including an empty one.
+      loadCharts: false,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** `GET /analytics/reorder` — reorder points, safety stock and EOQ. */
+export async function showReorder(req, res, next) {
+  try {
+    const filters = filterSchema.parse(req.query ?? {});
+    const [result, options] = await Promise.all([getReorder(filters), loadOptions()]);
+
+    res.render('pages/analytics/reorder', {
+      title: 'Точка заказа — Motherload',
+      ...result,
+      filters,
+      options,
+      // The reorder table is the product here; it has no canvas at all.
       loadCharts: false,
     });
   } catch (error) {

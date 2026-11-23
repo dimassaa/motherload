@@ -58,6 +58,7 @@ const STATUS_CHIPS = Object.freeze({
   ok: { label: 'В норме', className: 'chip--success' },
   zero: { label: 'Нет остатка', className: 'chip--danger' },
   below_min: { label: 'Ниже минимума', className: 'chip--warning' },
+  below_rop: { label: 'Ниже точки заказа', className: 'chip--warning' },
   overstock: { label: 'Избыток', className: 'chip--warning' },
   info: { label: 'Информация', className: 'chip--info' },
   warning: { label: 'Предупреждение', className: 'chip--warning' },

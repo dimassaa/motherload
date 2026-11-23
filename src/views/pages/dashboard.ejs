@@ -1,17 +1,235 @@
-<section class="dashboard" aria-labelledby="dashboard-title">
-  <p class="axis-label">
-    <span>[ Обзор ]</span>
-    <span><%= roleLabel(currentUser.role) %></span>
-  </p>
+<section aria-labelledby="dashboard-title">
+  <div class="page-header">
+    <div>
+      <p class="axis-label">
+        <span>[ Обзор ]</span>
+        <span><%= roleLabel(currentUser.role) %></span>
+      </p>
+      <h1 id="dashboard-title" class="page-header__title">Обзор склада</h1>
+      <p class="page-header__meta">
+        Стоимость и движение запасов
+        · окно 90 дней: <%= formatDate(window.start) %> — <%= formatDate(window.referenceDate) %>
+      </p>
+    </div>
+    <a class="btn btn--outline btn--sm" href="/analytics/reorder">План закупок →</a>
+  </div>
 
-  <h1 id="dashboard-title" class="landing__title">Обзор склада</h1>
+  <div class="kpi-grid">
+    <section class="card kpi" aria-labelledby="kpi-stock-value">
+      <p class="kpi__label" id="kpi-stock-value">Стоимость запасов</p>
+      <p class="kpi__value"><%- money(kpis.stockValue) %></p>
+      <p class="kpi__note">Остаток партий по FIFO-себестоимости.</p>
+    </section>
 
-  <p class="landing__lead">
-    KPI, графики стоимости запасов и лента последних движений появятся на следующем этапе.
-  </p>
+    <section class="card kpi" aria-labelledby="kpi-below-rop">
+      <p class="kpi__label" id="kpi-below-rop">Позиций ниже ROP</p>
+      <p class="kpi__value"><%= formatQty(kpis.belowRopCount) %></p>
+      <p class="kpi__note">Хотя бы на одном складе остаток ниже точки заказа.</p>
+    </section>
 
-  <form class="form-actions" method="post" action="/logout">
-    <%- csrfField() %>
-    <button class="btn btn--outline" type="submit">Выйти</button>
-  </form>
+    <section class="card kpi" aria-labelledby="kpi-dead-value">
+      <p class="kpi__label" id="kpi-dead-value">Стоимость неликвидов</p>
+      <p class="kpi__value"><%- money(kpis.deadValue) %></p>
+      <p class="kpi__note">Запасы без расхода за последние 90 дней.</p>
+    </section>
+
+    <section class="card kpi" aria-labelledby="kpi-turnover">
+      <p class="kpi__label" id="kpi-turnover">Оборачиваемость за 90 дней</p>
+      <p class="kpi__value">
+        <% if (kpis.turnoverYear === null) { %>
+          нет данных
+        <% } else { %>
+          <%= formatNumber(kpis.turnoverYear, 2) %>
+        <% } %>
+      </p>
+      <p class="kpi__note">
+        <% if (kpis.coverageDays === null) { %>
+          Пока нет расхода — оборачиваемость не определена.
+        <% } else { %>
+          Годовых оборотов; запаса хватит примерно на <%= formatQty(kpis.coverageDays) %> дней.
+        <% } %>
+      </p>
+    </section>
+  </div>
+
+  <div class="chart-grid">
+    <section class="card" aria-labelledby="dashboard-chart-title">
+      <h2 id="dashboard-chart-title" class="card__title">Стоимость запасов по категориям</h2>
+      <p class="card__text">Горизонтальные столбцы — стоимость остатков категории в BYN.</p>
+      <% if (categoryChart.labels.length === 0) { %>
+        <%- include('../partials/empty-state', {
+          title: 'Пока нет остатков',
+          text: 'Стоимость появится после первой приёмки на склад.',
+        }) %>
+      <% } else { %>
+        <div class="chart-panel">
+          <canvas
+            data-chart="<%= JSON.stringify(categoryChart) %>"
+            role="img"
+            aria-label="Стоимость запасов по категориям в белорусских рублях"
+          ></canvas>
+        </div>
+      <% } %>
+    </section>
+
+    <section class="card" aria-labelledby="dashboard-matrix-title">
+      <h2 id="dashboard-matrix-title" class="card__title">Матрица ABC × XYZ</h2>
+      <p class="card__text">
+        Сколько позиций попадает в каждую пару классов: строки — стоимость остатка, столбцы —
+        регулярность расхода.
+      </p>
+
+      <div class="table-wrap matrix-wrap">
+        <table class="matrix">
+          <caption class="matrix__caption">
+            Всего позиций: <%= formatQty(matrix.total) %>
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col" class="matrix__corner">ABC ↓ / XYZ →</th>
+              <% for (const xyzClass of matrix.xyzClasses) { %>
+                <th scope="col" class="matrix__heading">Класс <%= xyzClass %></th>
+              <% } %>
+            </tr>
+          </thead>
+          <tbody>
+            <% for (const matrixRow of matrix.rows) { %>
+              <tr>
+                <th scope="row" class="matrix__row-heading">Класс <%= matrixRow.abc %></th>
+                <% for (const cell of matrixRow.cells) { %>
+                  <td class="matrix__cell <%= cell.count === 0 ? 'matrix__cell--zero' : '' %>">
+                    <%= formatQty(cell.count) %>
+                  </td>
+                <% } %>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card-actions">
+        <a class="btn btn--ghost btn--sm" href="/analytics/xyz">Подробнее в XYZ →</a>
+      </div>
+    </section>
+  </div>
+
+  <section class="card dashboard-section" aria-labelledby="dashboard-attention-title">
+    <h2 id="dashboard-attention-title" class="card__title">Требуют внимания</h2>
+    <p class="card__text">До восьми пар «позиция + склад» ниже точки заказа, начиная с крупнейшего заказа.</p>
+
+    <% if (attention.length === 0) { %>
+      <%- include('../partials/empty-state', {
+        title: 'Все позиции в норме',
+        text: 'Ни одна пара «позиция + склад» не опустилась ниже точки заказа.',
+        actionHref: '/analytics/reorder',
+        actionLabel: 'Открыть точки заказа',
+      }) %>
+    <% } else { %>
+      <div class="table-wrap table-wrap--spaced">
+        <table class="table">
+          <thead class="table__head">
+            <tr>
+              <th class="table__heading" scope="col">SKU</th>
+              <th class="table__heading" scope="col">Позиция</th>
+              <th class="table__heading" scope="col">Склад</th>
+              <th class="table__heading table__cell--num" scope="col">Остаток</th>
+              <th class="table__heading table__cell--num" scope="col">ROP</th>
+              <th class="table__heading table__cell--num" scope="col">Заказать</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% for (const row of attention) { %>
+              <tr class="table__row">
+                <td class="table__cell table__cell--code"><%= row.sku %></td>
+                <td class="table__cell">
+                  <a href="/components/<%= row.componentId %>"><%= row.name %></a>
+                  <% if (row.lowData) { %>
+                    <span class="tag tag--plain">мало данных</span>
+                  <% } %>
+                </td>
+                <td class="table__cell"><%= row.warehouseName %></td>
+                <td class="table__cell table__cell--num">
+                  <%= formatQty(row.balance) %> <%= row.unit %>
+                </td>
+                <td class="table__cell table__cell--num"><%= formatNumber(row.rop, 2) %></td>
+                <td class="table__cell table__cell--num">
+                  <strong><%= formatQty(row.suggested) %></strong> <%= row.unit %>
+                </td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+      <div class="card-actions">
+        <a class="btn btn--ghost btn--sm" href="/analytics/reorder">Все точки заказа →</a>
+      </div>
+    <% } %>
+  </section>
+
+  <section class="card dashboard-section" aria-labelledby="dashboard-movements-title">
+    <h2 id="dashboard-movements-title" class="card__title">Последние движения</h2>
+    <p class="card__text">Восемь последних изменений остатка по всем складам.</p>
+
+    <% if (recentMovements.length === 0) { %>
+      <%- include('../partials/empty-state', {
+        title: 'Пока нет движений',
+        text: 'Начните с приёмки — и здесь появится история остатков.',
+        actionHref: currentUser.role === 'analyst' ? null : '/stock/receipts/new',
+        actionLabel: currentUser.role === 'analyst' ? null : 'Провести приёмку',
+      }) %>
+    <% } else { %>
+      <div class="table-wrap table-wrap--spaced">
+        <table class="table">
+          <thead class="table__head">
+            <tr>
+              <th class="table__heading" scope="col">Дата</th>
+              <th class="table__heading" scope="col">Тип</th>
+              <th class="table__heading" scope="col">Позиция</th>
+              <th class="table__heading" scope="col">Склад</th>
+              <th class="table__heading table__cell--num" scope="col">Количество</th>
+              <th class="table__heading" scope="col">Сотрудник</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% for (const movement of recentMovements) { %>
+              <% const delta = Number(movement.qtyDelta); %>
+              <tr class="table__row">
+                <td class="table__cell table__cell--code">
+                  <%= formatDateTime(movement.createdAt) %>
+                </td>
+                <td class="table__cell">
+                  <%= movement.typeLabel %>
+                  <% if (movement.documentNumber) { %>
+                    <span class="table__cell--muted">· <%= movement.documentNumber %></span>
+                  <% } %>
+                </td>
+                <td class="table__cell">
+                  <%= movement.componentName %>
+                  <span class="table__cell--code table__cell--muted"><%= movement.sku %></span>
+                </td>
+                <td class="table__cell"><%= movement.warehouseName %></td>
+                <td class="table__cell table__cell--num">
+                  <span class="<%= delta > 0 ? 'movement-qty--in' : 'movement-qty--out' %>">
+                    <%= delta > 0 ? '+' : '−' %><%= formatQty(Math.abs(delta)) %>
+                  </span>
+                </td>
+                <td class="table__cell"><%= movement.userName ?? '—' %></td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </section>
+
+  <nav class="dashboard-links" aria-label="Разделы склада">
+    <a class="dashboard-links__link" href="/components">Комплектующие</a>
+    <a class="dashboard-links__link" href="/analytics/abc">ABC-анализ</a>
+    <a class="dashboard-links__link" href="/analytics/xyz">XYZ-анализ</a>
+    <a class="dashboard-links__link" href="/analytics/reorder">Точка заказа</a>
+    <% if (currentUser.role !== 'analyst') { %>
+      <a class="dashboard-links__link" href="/stock">Остатки</a>
+      <a class="dashboard-links__link" href="/inventory">Инвентаризация</a>
+    <% } %>
+  </nav>
 </section>

@@ -3,6 +3,7 @@ import { NotFoundError } from '../domain/errors.js';
 import { d } from '../domain/money.js';
 import { stockStatus, worstStockStatus } from '../domain/stock-status.js';
 import * as repository from '../repositories/components-read.js';
+import { getReorder } from './analytics.js';
 
 /** Catalog page size fixed by the specification. */
 const PAGE_SIZE = 25;
@@ -134,6 +135,18 @@ function classifyCatalogRow(row) {
 }
 
 function compareCatalogRows(a, b, sort, direction) {
+  // ROP is optional: a component without stock or movements has no planning
+  // row. Those stay at the end in both directions instead of jumping to the top
+  // on a descending sort.
+  if (sort === 'rop') {
+    if (a.rop === null || b.rop === null) {
+      if (a.rop === null && b.rop === null) return a.id - b.id;
+      return a.rop === null ? 1 : -1;
+    }
+    const ropResult = a.rop - b.rop || a.id - b.id;
+    return direction === 'desc' ? -ropResult : ropResult;
+  }
+
   let result;
 
   if (sort === 'value') {
@@ -151,14 +164,41 @@ function compareCatalogRows(a, b, sort, direction) {
 }
 
 /**
+ * Attach the reorder point to catalog rows.
+ *
+ * The catalog shows ROP in its own column and filters by `below_rop`, so it
+ * must use exactly the same pair calculation as the reorder page. The `rop`
+ * column shows the §6.6 aggregate (summed across participating warehouses)
+ * when no warehouse is selected, while `belowRop` is true as soon as one pair
+ * is below its own point — the same "at least one warehouse" condition the
+ * dashboard KPI counts. A component with no participating warehouse has no ROP
+ * and is never classified as below it.
+ */
+async function attachReorderPoints(rows, { warehouseId, categoryId }) {
+  if (rows.length === 0) return rows;
+
+  const reorder = await getReorder({ warehouseId, categoryId });
+  const byComponent = new Map(reorder.rows.map((row) => [row.componentId, row]));
+
+  return rows.map((row) => {
+    const planning = byComponent.get(row.id);
+    return {
+      ...row,
+      rop: planning?.rop ?? null,
+      belowRop: planning?.belowRop ?? false,
+    };
+  });
+}
+
+/**
  * One catalog page.
  * @param {{
  *   q?: string,
  *   categoryId?: number | null,
  *   manufacturerId?: number | null,
  *   warehouseId?: number | null,
- *   status?: 'all' | 'zero' | 'overstock' | 'below_min',
- *   sort?: 'name' | 'sku' | 'qty' | 'value',
+ *   status?: 'all' | 'zero' | 'overstock' | 'below_min' | 'below_rop',
+ *   sort?: 'name' | 'sku' | 'qty' | 'value' | 'rop',
  *   dir?: 'asc' | 'desc',
  *   page?: number,
  * }} [filters]
@@ -182,8 +222,19 @@ export async function list(filters = {}) {
   // the status filter so its count is exact.
   const candidates = await repository.listCatalogCandidates(query);
   const classified = candidates.map(classifyCatalogRow);
-  const filtered =
-    query.status === 'all' ? classified : classified.filter((row) => row.status === query.status);
+  const withPlanning = await attachReorderPoints(classified, {
+    warehouseId: query.warehouseId,
+    categoryId: query.categoryId,
+  });
+
+  // `below_rop` is a planning filter, not a stock-status chip: the row keeps
+  // its zero/below_min/overstock classification and is matched separately.
+  let filtered = withPlanning;
+  if (query.status === 'below_rop') {
+    filtered = withPlanning.filter((row) => row.belowRop);
+  } else if (query.status !== 'all') {
+    filtered = withPlanning.filter((row) => row.status === query.status);
+  }
 
   filtered.sort((a, b) => compareCatalogRows(a, b, query.sort, query.dir));
 

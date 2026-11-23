@@ -25,11 +25,11 @@ const listQuerySchema = z.object({
   warehouseId: optionalFilterId,
   status: z.preprocess(
     (value) => (typeof value === 'string' ? value : 'all'),
-    z.enum(['all', 'zero', 'overstock', 'below_min']).catch('all'),
+    z.enum(['all', 'zero', 'overstock', 'below_min', 'below_rop']).catch('all'),
   ),
   sort: z.preprocess(
     (value) => (typeof value === 'string' ? value : 'name'),
-    z.enum(['name', 'sku', 'qty', 'value']).catch('name'),
+    z.enum(['name', 'sku', 'qty', 'value', 'rop']).catch('name'),
   ),
   dir: z.preprocess(
     (value) => (typeof value === 'string' ? value : 'asc'),
