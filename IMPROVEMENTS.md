@@ -189,16 +189,30 @@ a large central stock and one weak regional warehouse is therefore listed with a
 healthy-looking total. The reorder page is the authoritative per-warehouse view;
 a later catalog pass could add a "N складов ниже ROP" hint to the status cell.
 
-## 2026-11-23, Task 20 — dead_stock requires a prior issue
+## 2026-11-23, Task 20 — dead_stock uses stock age, KPI deadValue does not
 
-`dead_stock` fires only when the pair has at least one historical issue and the
-newest one is older than 90 days. The literal §6.8 wording ("нет расходных
-движений 90 дней") would also flag stock received yesterday, which would put a
-dead-stock alert on every fresh receipt and bury the page in noise. The dashboard
-KPI `deadValue` still counts never-issued stock as frozen money, so the two
-surfaces disagree for a brand-new position. Decide whether the KPI should apply
-the same prior-demand rule or the alert should be renamed; the current choice is
-deliberate and covered by an integration test.
+`dead_stock` fires when the pair has stock, no issue inside the 90-day window
+(never issued counts), and the oldest still-relevant positive receipt is at least
+90 days old. That flags the actual frozen-inventory case while leaving a fresh
+receipt after an old issue alone.
+
+The dashboard KPI `deadValue` still follows the literal §6.7 formula and counts
+stock of every component with no issue in 90 days, including stock received
+yesterday. Aligning it would change a KPI definition fixed by the spec and
+accepted in Task 19, and would rewrite the Task 19 dashboard expectations; that
+is a product decision, not a local Task 20 fix. The two surfaces therefore
+disagree for brand-new stock. Decide whether §6.7 should gain the stock-age
+condition before the final analytics pass.
+
+## 2026-11-23, Task 20 — manual resolve is intentionally transient
+
+An admin can close an alert manually, but recalculation has no suppression list:
+if the condition is still true, the next pass opens a fresh alert beside the
+resolved history. That is deliberate — a still-true shortage must not stay hidden
+because someone clicked "Закрыть" — and is covered by an integration test. The
+cost is that manual resolution alone does not silence an alert permanently; only
+fixing the stock or resolving the condition does. A per-condition suppression
+window (with an owner and an expiry) would be a separate product feature.
 
 ## 2026-11-23, Task 20 — the reference-date helper now has a third copy
 

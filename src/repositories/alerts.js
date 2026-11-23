@@ -42,7 +42,10 @@ const ALERT_COLUMNS = `
  *
  * `last_issue_date` is the newest consumption day, not the newest movement: a
  * transfer or an inventory correction is not demand and must not hide a dead
- * position.
+ * position. `stock_since_date` is the oldest still-relevant positive receipt:
+ * the age of the stock, not the age of the catalogue row. Batches with a
+ * remaining quantity are authoritative; a positive movement is the fallback for
+ * fixtures or adjustments that have no batch.
  *
  * @param {import('pg').PoolClient} client
  * @param {{ activityStart: string }} filters inclusive lower bound (`YYYY-MM-DD`)
@@ -50,7 +53,7 @@ const ALERT_COLUMNS = `
  *   componentId: number, sku: string, name: string, unit: string,
  *   balance: number, minStock: number, maxStock: number | null,
  *   warehouseId: number, warehouseName: string,
- *   lastIssueDate: string | null
+ *   lastIssueDate: string | null, stockSinceDate: string | null
  * }>>}
  */
 export async function listCandidatePairs(client, { activityStart }) {
@@ -65,7 +68,8 @@ export async function listCandidatePairs(client, { activityStart }) {
        vw.max_stock,
        vw.warehouse_id,
        w.name as warehouse_name,
-       last_issue.last_issue_date
+       last_issue.last_issue_date,
+       coalesce(oldest_batch.oldest_batch_date, oldest_movement.oldest_movement_date) as stock_since_date
      from v_component_warehouse_stock vw
      join components c on c.id = vw.component_id
      join warehouses w on w.id = vw.warehouse_id
@@ -78,6 +82,20 @@ export async function listCandidatePairs(client, { activityStart }) {
          and d.type = 'issue'
          and m.qty_delta < 0
      ) last_issue on true
+     left join lateral (
+       select min(b.received_at) as oldest_batch_date
+       from stock_batches b
+       where b.component_id = vw.component_id
+         and b.warehouse_id = vw.warehouse_id
+         and b.qty_remaining > 0
+     ) oldest_batch on true
+     left join lateral (
+       select (min(m.created_at) at time zone '${DISPLAY_ZONE}')::date as oldest_movement_date
+       from stock_movements m
+       where m.component_id = vw.component_id
+         and m.warehouse_id = vw.warehouse_id
+         and m.qty_delta > 0
+     ) oldest_movement on true
      where c.is_active
        and (
          vw.qty > 0
@@ -104,6 +122,7 @@ export async function listCandidatePairs(client, { activityStart }) {
     warehouseId: row.warehouse_id,
     warehouseName: row.warehouse_name,
     lastIssueDate: row.last_issue_date ?? null,
+    stockSinceDate: row.stock_since_date ?? null,
   }));
 }
 

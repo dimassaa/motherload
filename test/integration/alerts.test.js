@@ -370,11 +370,141 @@ test('alert recalculation keeps manual acknowledgement and auto-resolves a gone 
     at: '2026-11-22T10:00:00+03:00',
     userId: references.storekeeper.id,
   });
-  const reopened = await recalculate();
-  assert.equal(reopened.created, 1);
+  const refreshed = await recalculate();
+  assert.equal(refreshed.created, 1);
   const rows = await alertRows();
   assert.equal(rows.filter((row) => row.status === 'resolved').length, 1);
   assert.equal(rows.filter((row) => row.status === 'open').length, 1);
+
+  const { rows: recalcAudit } = await query(
+    `select details from audit_log where action = 'alerts.recalculate' order by id`,
+  );
+  assert.ok(
+    recalcAudit.some((row) => row.details.resolved === 1),
+    'auto-resolution must be recorded in the audit details',
+  );
+});
+
+test('alert manual resolve is transient and recalculation reopens a true condition', async () => {
+  const references = await seedReferences();
+
+  const component = await createComponent(references, {
+    sku: 'CPU-RESOLVE-01',
+    name: 'Процессор с ручным закрытием',
+  });
+  await setThresholds(component.id, { minStock: 10 });
+  await receive({ componentId: component.id, warehouseId: references.minsk.id, qty: 2 });
+
+  await recalculate();
+  const [alert] = await alertRows();
+
+  await resolve({ alertId: alert.id, user: references.admin });
+  let rows = await alertRows();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].status, 'resolved');
+
+  // Manual resolution is not a suppression rule: the condition is still true,
+  // so the next recalculation opens a fresh alert next to the closed history.
+  const next = await recalculate();
+  assert.equal(next.created, 1);
+  rows = await alertRows();
+  assert.equal(rows.length, 2);
+  assert.equal(rows.filter((row) => row.status === 'resolved').length, 1);
+  assert.equal(rows.filter((row) => row.status === 'open').length, 1);
+  assert.equal(await openAlertCount(), 1);
+
+  const { rows: auditRows } = await query(
+    `select action from audit_log where action in ('alert.resolve', 'alerts.recalculate') order by id`,
+  );
+  assert.ok(auditRows.some((row) => row.action === 'alert.resolve'));
+});
+
+test('alert recalculation uses stock age for dead stock, not prior demand', async () => {
+  const references = await seedReferences();
+
+  // Received 200 days before the reference date and never issued: the classic
+  // frozen inventory case must be flagged even though demand history is empty.
+  const old = await createComponent(references, {
+    sku: 'CPU-OLD-200',
+    name: 'Позиция без расхода 200 дней',
+  });
+  await receive({
+    componentId: old.id,
+    warehouseId: references.minsk.id,
+    qty: 10,
+    receivedAt: '2026-05-06',
+  });
+
+  // The old batch was fully consumed and the latest issue is 100 days old, but
+  // the remaining stock arrived yesterday: it is not dead yet.
+  const restocked = await createComponent(references, {
+    sku: 'CPU-RESTOCK-01',
+    name: 'Позиция с давним расходом и свежим остатком',
+  });
+  await receive({
+    componentId: restocked.id,
+    warehouseId: references.minsk.id,
+    qty: 10,
+    remaining: 0,
+    receivedAt: '2026-06-01',
+  });
+  await issue({
+    componentId: restocked.id,
+    warehouseId: references.minsk.id,
+    qty: 10,
+    at: '2026-08-14T10:00:00+03:00',
+    userId: references.storekeeper.id,
+  });
+  await receive({
+    componentId: restocked.id,
+    warehouseId: references.minsk.id,
+    qty: 5,
+    receivedAt: '2026-11-21',
+  });
+
+  const result = await recalculate();
+  assert.equal(result.created, 1);
+
+  const rows = await alertRows();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].type, 'dead_stock');
+  assert.equal(rows[0].component_id, old.id);
+  assert.match(rows[0].message, /без расхода 90 дней/);
+  assert.ok(!rows.some((row) => row.component_id === restocked.id));
+});
+
+test('alert recalculation treats a negative balance as stockout', async () => {
+  const references = await seedReferences();
+
+  const component = await createComponent(references, {
+    sku: 'CPU-NEGATIVE-01',
+    name: 'Позиция с отрицательным учётом',
+  });
+  await setThresholds(component.id, { minStock: 10 });
+  await receive({
+    componentId: component.id,
+    warehouseId: references.minsk.id,
+    qty: 2,
+    remaining: 0,
+    receivedAt: '2026-11-10',
+  });
+  await issue({
+    componentId: component.id,
+    warehouseId: references.minsk.id,
+    qty: 3,
+    at: '2026-11-15T10:00:00+03:00',
+    userId: references.storekeeper.id,
+  });
+
+  const result = await recalculate();
+  assert.equal(result.created, 1);
+
+  const rows = await alertRows();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].type, 'stockout', 'a negative ledger balance is empty stock, not low stock');
+  assert.equal(rows[0].severity, 'critical');
+  assert.match(rows[0].message, /остаток 0 шт\./);
+  assert.ok(!rows.some((row) => row.type === 'low_stock'));
 });
 
 test('alert recalculation flags overstock and dead stock without false positives', async () => {
@@ -493,6 +623,7 @@ test('alert page lists, filters and renders role-appropriate actions', async () 
   // The badge is present only in the authenticated chrome and counts every
   // unresolved alert.
   assert.match(page.text, /class="app-nav__badge"/);
+  assert.match(page.text, /class="visually-hidden"> открытых алертов/);
   const badgeMatch = /class="app-nav__badge"[^>]*>\s*(\d+)\s*</.exec(page.text);
   assert.ok(badgeMatch, 'the navigation badge must render its count');
   assert.equal(badgeMatch[1], '2');

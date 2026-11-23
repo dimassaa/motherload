@@ -146,7 +146,7 @@ function buildMessage(pair) {
     if (pair.minStock > 0) {
       return `${label}: остаток 0 ${pair.unit}. при минимуме ${formatQty(pair.minStock)} ${pair.unit}. ${warehouse}`;
     }
-    return `${label}: остаток 0 ${pair.unit}., движение по складу было. ${warehouse}`;
+    return `${label}: остаток 0 ${pair.unit}., движения по складу были — позиция закончилась. ${warehouse}`;
   }
 
   if (pair.type === 'low_stock') {
@@ -163,19 +163,23 @@ function buildMessage(pair) {
 /**
  * Turn every participating pair into zero or more alert conditions.
  *
- * `stockout` and `low_stock` are mutually exclusive by construction. An
- * overstocked position can also be dead, and a below-minimum position can be
- * dead too: those are separate facts and get separate rows keyed by type.
+ * `stockout` and `low_stock` are mutually exclusive by construction, and a
+ * non-positive balance is a stockout: showing a negative quantity under
+ * "below minimum" would hide an impossible ledger state behind a softer label.
  *
- * Dead stock requires a prior issue. A position received yesterday has no
- * consumption history to judge, and flagging every fresh receipt as a
- * non-liquid asset would drown the page in noise; "no issue for 90 days"
- * applies to positions that actually had demand at some point.
+ * Dead stock is about frozen capital, not about demand history: the stock must
+ * itself be at least 90 days old and have no issue inside the 90-day window.
+ * A position received yesterday after an old issue is not dead, while stock
+ * received 200 days ago and never issued is exactly the case the alert exists
+ * for. Stock age comes from the oldest positive receipt, not from when the
+ * catalogue row was created.
  *
  * @param {Awaited<ReturnType<typeof repository.listCandidatePairs>>} pairs
- * @param {{ deadStart: string }} window inclusive first day of the dead window
+ * @param {{ deadStart: string, stockDeadline: string }} window
+ *   `deadStart` is the inclusive first day of the 90-day issue window;
+ *   `stockDeadline` is the latest receipt date that makes stock 90 days old
  */
-function buildCandidates(pairs, { deadStart }) {
+function buildCandidates(pairs, { deadStart, stockDeadline }) {
   const candidates = [];
 
   for (const pair of pairs) {
@@ -191,7 +195,7 @@ function buildCandidates(pairs, { deadStart }) {
       warehouseName: pair.warehouseName,
     };
 
-    if (pair.balance === 0) {
+    if (pair.balance <= 0) {
       candidates.push({
         type: 'stockout',
         severity: ALERT_SEVERITY.stockout,
@@ -219,7 +223,10 @@ function buildCandidates(pairs, { deadStart }) {
       });
     }
 
-    if (pair.balance > 0 && pair.lastIssueDate !== null && pair.lastIssueDate < deadStart) {
+    const noRecentIssue = pair.lastIssueDate === null || pair.lastIssueDate < deadStart;
+    const stockIsOld = pair.stockSinceDate !== null && pair.stockSinceDate <= stockDeadline;
+
+    if (pair.balance > 0 && noRecentIssue && stockIsOld) {
       candidates.push({
         type: 'dead_stock',
         severity: ALERT_SEVERITY.dead_stock,
@@ -260,6 +267,7 @@ export async function recalculate({ user = null, userId = null, req } = {}) {
   const reference = referenceDate();
   const activityStart = addDays(reference, -ACTIVITY_WINDOW_DAYS);
   const deadStart = addDays(reference, -(DEAD_STOCK_DAYS - 1));
+  const stockDeadline = addDays(reference, -DEAD_STOCK_DAYS);
 
   return withTransaction(async (client) => {
     // The role is read from the database, not trusted from the session object.
@@ -272,7 +280,7 @@ export async function recalculate({ user = null, userId = null, req } = {}) {
     }
 
     const pairs = await repository.listCandidatePairs(client, { activityStart });
-    const candidates = buildCandidates(pairs, { deadStart });
+    const candidates = buildCandidates(pairs, { deadStart, stockDeadline });
     const existing = await repository.listActiveAlerts(client);
     const existingByKey = new Map(existing.map((alert) => [conditionKey(alert), alert]));
 

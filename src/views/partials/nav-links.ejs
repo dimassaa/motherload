@@ -52,8 +52,8 @@
       >
         <%= link.label %>
         <% if (link.badge) { %>
-          <span class="app-nav__badge" aria-label="Открытых алертов: <%= link.badge %>">
-            <%= link.badge %>
+          <span class="app-nav__badge">
+            <%= link.badge %><span class="visually-hidden"> открытых алертов</span>
           </span>
         <% } %>
       </a>

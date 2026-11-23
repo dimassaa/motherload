@@ -1,3 +1,4 @@
+import { logger } from '../lib/logger.js';
 import { countOpen } from '../services/alerts.js';
 import * as helpers from '../views/helpers.js';
 
@@ -43,6 +44,11 @@ export async function attachLocals(req, res, next) {
     res.locals.openAlertsCount = openAlertsCount;
     next();
   } catch (error) {
-    next(error);
+    // The badge is cosmetic. A count failure must not take down every
+    // authenticated page: log it, show zero, and let the page render.
+    (req.log ?? logger).warn({ err: error }, 'open alert count failed');
+    res.locals.alertCount = 0;
+    res.locals.openAlertsCount = 0;
+    next();
   }
 }
