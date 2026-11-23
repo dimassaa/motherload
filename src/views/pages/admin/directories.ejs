@@ -1,0 +1,528 @@
+<%
+  // One aria-describedby value per field: the hint and the error must share the
+  // attribute, because a second attribute would be ignored by screen readers.
+  const fieldError = (name) => (fieldErrors && fieldErrors[name] ? fieldErrors[name] : null);
+  const valueOf = (name) => (values[name] === undefined || values[name] === null ? '' : values[name]);
+  const fieldAttrs = (name, { hintId = null, errorId }) => {
+    const hasError = Boolean(fieldError(name));
+    const describedBy = [hintId, hasError ? errorId : null].filter(Boolean).join(' ');
+    return [
+      hasError ? 'aria-invalid="true"' : null,
+      describedBy ? `aria-describedby="${describedBy}"` : null,
+    ]
+      .filter(Boolean)
+      .join(' ');
+  };
+  const isEditing = Boolean(editing);
+%>
+<section aria-labelledby="directories-title">
+  <div class="page-header">
+    <h1 id="directories-title" class="page-header__title">Справочники</h1>
+    <p class="page-header__meta">
+      Всего <%= meta.recordsLabel %>: <%= records.length %>
+    </p>
+  </div>
+
+  <nav class="tabs" aria-label="Разделы справочника">
+    <ul class="tabs__list">
+      <% for (const item of entities) { %>
+        <li class="tabs__item">
+          <a
+            class="tabs__link"
+            href="/admin/directories/<%= item.key %>"
+            <%- item.key === activeEntity ? 'aria-current="page"' : '' %>
+          >
+            <%= item.label %>
+          </a>
+        </li>
+      <% } %>
+    </ul>
+  </nav>
+
+  <%- include('../../partials/form-errors', { errors }) %>
+
+  <div class="directory-layout">
+    <section class="card directory-list" aria-labelledby="directory-list-title">
+      <h2 id="directory-list-title" class="card__title"><%= meta.label %></h2>
+
+      <% if (records.length === 0) { %>
+        <%- include('../../partials/empty-state', {
+          title: 'Пока нет записей',
+          text: `Добавьте первую запись в разделе «${meta.label}» с помощью формы на этой странице.`,
+        }) %>
+      <% } else { %>
+        <div class="table-wrap">
+          <table class="table">
+            <thead class="table__head">
+              <% if (activeEntity === 'categories') { %>
+                <tr>
+                  <th class="table__heading" scope="col">Название</th>
+                  <th class="table__heading" scope="col">Slug</th>
+                  <th class="table__heading" scope="col">Описание</th>
+                  <th class="table__heading" scope="col">Порядок</th>
+                  <th class="table__heading" scope="col">
+                    <span class="visually-hidden">Действия</span>
+                  </th>
+                </tr>
+              <% } else if (activeEntity === 'manufacturers') { %>
+                <tr>
+                  <th class="table__heading" scope="col">Название</th>
+                  <th class="table__heading" scope="col">Страна</th>
+                  <th class="table__heading" scope="col">
+                    <span class="visually-hidden">Действия</span>
+                  </th>
+                </tr>
+              <% } else if (activeEntity === 'suppliers') { %>
+                <tr>
+                  <th class="table__heading" scope="col">Название</th>
+                  <th class="table__heading" scope="col">УНП</th>
+                  <th class="table__heading" scope="col">Контактное лицо</th>
+                  <th class="table__heading" scope="col">Телефон</th>
+                  <th class="table__heading" scope="col">Email</th>
+                  <th class="table__heading" scope="col">Адрес</th>
+                  <th class="table__heading" scope="col">Срок, дней</th>
+                  <th class="table__heading" scope="col">Статус</th>
+                  <th class="table__heading" scope="col">
+                    <span class="visually-hidden">Действия</span>
+                  </th>
+                </tr>
+              <% } else { %>
+                <tr>
+                  <th class="table__heading" scope="col">Код</th>
+                  <th class="table__heading" scope="col">Название</th>
+                  <th class="table__heading" scope="col">Город</th>
+                  <th class="table__heading" scope="col">Адрес</th>
+                  <th class="table__heading" scope="col">Статус</th>
+                  <th class="table__heading" scope="col">
+                    <span class="visually-hidden">Действия</span>
+                  </th>
+                </tr>
+              <% } %>
+            </thead>
+            <tbody>
+              <% for (const record of records) { %>
+                <tr class="table__row">
+                  <% if (activeEntity === 'categories') { %>
+                    <td class="table__cell"><%= record.name %></td>
+                    <td class="table__cell table__cell--code"><%= record.slug %></td>
+                    <td class="table__cell">
+                      <%= record.description ?? '—' %>
+                    </td>
+                    <td class="table__cell table__cell--num"><%= record.sortOrder %></td>
+                  <% } else if (activeEntity === 'manufacturers') { %>
+                    <td class="table__cell"><%= record.name %></td>
+                    <td class="table__cell"><%= record.country ?? '—' %></td>
+                  <% } else if (activeEntity === 'suppliers') { %>
+                    <td class="table__cell"><%= record.name %></td>
+                    <td class="table__cell table__cell--code"><%= record.unp %></td>
+                    <td class="table__cell"><%= record.contactPerson ?? '—' %></td>
+                    <td class="table__cell table__cell--code"><%= record.phone ?? '—' %></td>
+                    <td class="table__cell table__cell--code"><%= record.email ?? '—' %></td>
+                    <td class="table__cell"><%= record.address ?? '—' %></td>
+                    <td class="table__cell table__cell--num"><%= record.leadTimeDays %></td>
+                    <td class="table__cell">
+                      <%- include('../../partials/status-chip', {
+                        status: record.isActive ? 'active' : 'inactive',
+                      }) %>
+                    </td>
+                  <% } else { %>
+                    <td class="table__cell table__cell--code"><%= record.code %></td>
+                    <td class="table__cell"><%= record.name %></td>
+                    <td class="table__cell"><%= record.city %></td>
+                    <td class="table__cell"><%= record.address %></td>
+                    <td class="table__cell">
+                      <%- include('../../partials/status-chip', {
+                        status: record.isActive ? 'active' : 'inactive',
+                      }) %>
+                    </td>
+                  <% } %>
+
+                  <td class="table__cell">
+                    <div class="row-actions">
+                      <a
+                        href="/admin/directories/<%= activeEntity %>?edit=<%= record.id %>"
+                        aria-label="Изменить запись «<%= record.displayName %>»"
+                      >
+                        Изменить
+                      </a>
+
+                      <form
+                        class="row-actions__delete"
+                        method="post"
+                        action="/admin/directories/<%= activeEntity %>/<%= record.id %>/delete"
+                        data-confirm="Удалить запись «<%= record.displayName %>»? Если на неё ссылаются документы или позиции, удаление будет отклонено."
+                      >
+                        <%- csrfField() %>
+                        <button class="btn btn--ghost btn--sm" type="submit">
+                          Удалить<span class="visually-hidden">
+                            запись «<%= record.displayName %>»</span
+                          >
+                        </button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+              <% } %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+    </section>
+
+    <section class="card form-panel" aria-labelledby="directory-form-title">
+      <h2 id="directory-form-title" class="card__title">
+        <%= isEditing ? 'Редактирование записи' : 'Новая запись' %>
+      </h2>
+      <% if (isEditing) { %>
+        <p class="card__text">Вы изменяете «<%= editing.name %>».</p>
+      <% } else { %>
+        <p class="card__text">Заполните поля и сохраните запись в разделе «<%= meta.label %>».</p>
+      <% } %>
+
+      <form class="form" method="post" action="<%= formAction %>" novalidate>
+        <%- csrfField() %>
+
+        <% if (activeEntity === 'categories') { %>
+          <div class="form-field">
+            <label class="form-field__label" for="category-name">Название</label>
+            <input
+              class="form-field__input"
+              id="category-name"
+              name="name"
+              type="text"
+              required
+              value="<%= valueOf('name') %>"
+              <%- fieldAttrs('name', { errorId: 'category-name-error' }) %>
+            >
+            <% if (fieldError('name')) { %>
+              <p class="form-field__error" id="category-name-error"><%= fieldError('name') %></p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="category-slug">Slug</label>
+            <input
+              class="form-field__input"
+              id="category-slug"
+              name="slug"
+              type="text"
+              required
+              placeholder="cpu-coolers"
+              value="<%= valueOf('slug') %>"
+              <%- fieldAttrs('slug', {
+                hintId: 'category-slug-hint',
+                errorId: 'category-slug-error',
+              }) %>
+            >
+            <p class="form-field__hint" id="category-slug-hint">
+              Строчные латинские буквы, цифры и дефис. Используется в адресах фильтров.
+            </p>
+            <% if (fieldError('slug')) { %>
+              <p class="form-field__error" id="category-slug-error"><%= fieldError('slug') %></p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="category-description">Описание</label>
+            <textarea
+              class="form-field__textarea"
+              id="category-description"
+              name="description"
+              rows="3"
+              <%- fieldAttrs('description', { errorId: 'category-description-error' }) %>
+            ><%= valueOf('description') %></textarea>
+            <% if (fieldError('description')) { %>
+              <p class="form-field__error" id="category-description-error">
+                <%= fieldError('description') %>
+              </p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="category-sort-order">Порядок сортировки</label>
+            <input
+              class="form-field__input"
+              id="category-sort-order"
+              name="sortOrder"
+              type="number"
+              min="0"
+              step="1"
+              value="<%= valueOf('sortOrder') %>"
+              <%- fieldAttrs('sortOrder', { errorId: 'category-sort-order-error' }) %>
+            >
+            <% if (fieldError('sortOrder')) { %>
+              <p class="form-field__error" id="category-sort-order-error">
+                <%= fieldError('sortOrder') %>
+              </p>
+            <% } %>
+          </div>
+        <% } else if (activeEntity === 'manufacturers') { %>
+          <div class="form-field">
+            <label class="form-field__label" for="manufacturer-name">Название</label>
+            <input
+              class="form-field__input"
+              id="manufacturer-name"
+              name="name"
+              type="text"
+              required
+              value="<%= valueOf('name') %>"
+              <%- fieldAttrs('name', { errorId: 'manufacturer-name-error' }) %>
+            >
+            <% if (fieldError('name')) { %>
+              <p class="form-field__error" id="manufacturer-name-error"><%= fieldError('name') %></p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="manufacturer-country">Страна</label>
+            <input
+              class="form-field__input"
+              id="manufacturer-country"
+              name="country"
+              type="text"
+              value="<%= valueOf('country') %>"
+              <%- fieldAttrs('country', { errorId: 'manufacturer-country-error' }) %>
+            >
+            <% if (fieldError('country')) { %>
+              <p class="form-field__error" id="manufacturer-country-error">
+                <%= fieldError('country') %>
+              </p>
+            <% } %>
+          </div>
+        <% } else if (activeEntity === 'suppliers') { %>
+          <div class="form-field">
+            <label class="form-field__label" for="supplier-name">Название</label>
+            <input
+              class="form-field__input"
+              id="supplier-name"
+              name="name"
+              type="text"
+              required
+              value="<%= valueOf('name') %>"
+              <%- fieldAttrs('name', { errorId: 'supplier-name-error' }) %>
+            >
+            <% if (fieldError('name')) { %>
+              <p class="form-field__error" id="supplier-name-error"><%= fieldError('name') %></p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="supplier-unp">УНП</label>
+            <input
+              class="form-field__input"
+              id="supplier-unp"
+              name="unp"
+              type="text"
+              inputmode="numeric"
+              maxlength="9"
+              required
+              value="<%= valueOf('unp') %>"
+              <%- fieldAttrs('unp', { hintId: 'supplier-unp-hint', errorId: 'supplier-unp-error' }) %>
+            >
+            <p class="form-field__hint" id="supplier-unp-hint">
+              9 цифр, уникальный для каждого поставщика.
+            </p>
+            <% if (fieldError('unp')) { %>
+              <p class="form-field__error" id="supplier-unp-error"><%= fieldError('unp') %></p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="supplier-contact">Контактное лицо</label>
+            <input
+              class="form-field__input"
+              id="supplier-contact"
+              name="contactPerson"
+              type="text"
+              value="<%= valueOf('contactPerson') %>"
+              <%- fieldAttrs('contactPerson', { errorId: 'supplier-contact-error' }) %>
+            >
+            <% if (fieldError('contactPerson')) { %>
+              <p class="form-field__error" id="supplier-contact-error">
+                <%= fieldError('contactPerson') %>
+              </p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="supplier-phone">Телефон</label>
+            <input
+              class="form-field__input"
+              id="supplier-phone"
+              name="phone"
+              type="tel"
+              placeholder="+375 (17) 245-67-89"
+              value="<%= valueOf('phone') %>"
+              <%- fieldAttrs('phone', { hintId: 'supplier-phone-hint', errorId: 'supplier-phone-error' }) %>
+            >
+            <p class="form-field__hint" id="supplier-phone-hint">
+              Необязательно. Формат: +375 (17) 245-67-89.
+            </p>
+            <% if (fieldError('phone')) { %>
+              <p class="form-field__error" id="supplier-phone-error"><%= fieldError('phone') %></p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="supplier-email">Email</label>
+            <input
+              class="form-field__input"
+              id="supplier-email"
+              name="email"
+              type="email"
+              inputmode="email"
+              value="<%= valueOf('email') %>"
+              <%- fieldAttrs('email', { hintId: 'supplier-email-hint', errorId: 'supplier-email-error' }) %>
+            >
+            <p class="form-field__hint" id="supplier-email-hint">
+              Необязательно. Только адреса в домене .by, например sales@postavka.by.
+            </p>
+            <% if (fieldError('email')) { %>
+              <p class="form-field__error" id="supplier-email-error"><%= fieldError('email') %></p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="supplier-address">Адрес</label>
+            <input
+              class="form-field__input"
+              id="supplier-address"
+              name="address"
+              type="text"
+              value="<%= valueOf('address') %>"
+              <%- fieldAttrs('address', { errorId: 'supplier-address-error' }) %>
+            >
+            <% if (fieldError('address')) { %>
+              <p class="form-field__error" id="supplier-address-error"><%= fieldError('address') %></p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="supplier-lead-time">Срок поставки, дней</label>
+            <input
+              class="form-field__input"
+              id="supplier-lead-time"
+              name="leadTimeDays"
+              type="number"
+              min="1"
+              step="1"
+              required
+              value="<%= valueOf('leadTimeDays') %>"
+              <%- fieldAttrs('leadTimeDays', { errorId: 'supplier-lead-time-error' }) %>
+            >
+            <% if (fieldError('leadTimeDays')) { %>
+              <p class="form-field__error" id="supplier-lead-time-error">
+                <%= fieldError('leadTimeDays') %>
+              </p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="supplier-active">Статус</label>
+            <select class="form-field__select" id="supplier-active" name="isActive">
+              <option value="true" <%- String(valueOf('isActive')) !== 'false' ? 'selected' : '' %>>
+                Активен
+              </option>
+              <option value="false" <%- String(valueOf('isActive')) === 'false' ? 'selected' : '' %>>
+                Неактивен
+              </option>
+            </select>
+          </div>
+        <% } else { %>
+          <div class="form-field">
+            <label class="form-field__label" for="warehouse-code">Код</label>
+            <input
+              class="form-field__input"
+              id="warehouse-code"
+              name="code"
+              type="text"
+              required
+              placeholder="WH-MSK"
+              value="<%= valueOf('code') %>"
+              <%- fieldAttrs('code', { hintId: 'warehouse-code-hint', errorId: 'warehouse-code-error' }) %>
+            >
+            <p class="form-field__hint" id="warehouse-code-hint">
+              Латинские буквы, цифры и дефис, например WH-MSK.
+            </p>
+            <% if (fieldError('code')) { %>
+              <p class="form-field__error" id="warehouse-code-error"><%= fieldError('code') %></p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="warehouse-name">Название</label>
+            <input
+              class="form-field__input"
+              id="warehouse-name"
+              name="name"
+              type="text"
+              required
+              value="<%= valueOf('name') %>"
+              <%- fieldAttrs('name', { errorId: 'warehouse-name-error' }) %>
+            >
+            <% if (fieldError('name')) { %>
+              <p class="form-field__error" id="warehouse-name-error"><%= fieldError('name') %></p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="warehouse-city">Город</label>
+            <input
+              class="form-field__input"
+              id="warehouse-city"
+              name="city"
+              type="text"
+              required
+              value="<%= valueOf('city') %>"
+              <%- fieldAttrs('city', { errorId: 'warehouse-city-error' }) %>
+            >
+            <% if (fieldError('city')) { %>
+              <p class="form-field__error" id="warehouse-city-error"><%= fieldError('city') %></p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="warehouse-address">Адрес</label>
+            <input
+              class="form-field__input"
+              id="warehouse-address"
+              name="address"
+              type="text"
+              required
+              value="<%= valueOf('address') %>"
+              <%- fieldAttrs('address', { errorId: 'warehouse-address-error' }) %>
+            >
+            <% if (fieldError('address')) { %>
+              <p class="form-field__error" id="warehouse-address-error">
+                <%= fieldError('address') %>
+              </p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="warehouse-active">Статус</label>
+            <select class="form-field__select" id="warehouse-active" name="isActive">
+              <option value="true" <%- String(valueOf('isActive')) !== 'false' ? 'selected' : '' %>>
+                Активен
+              </option>
+              <option value="false" <%- String(valueOf('isActive')) === 'false' ? 'selected' : '' %>>
+                Неактивен
+              </option>
+            </select>
+          </div>
+        <% } %>
+
+        <div class="form-actions">
+          <button class="btn btn--primary" type="submit">
+            <%= isEditing ? 'Сохранить изменения' : 'Добавить запись' %>
+          </button>
+          <% if (isEditing) { %>
+            <a class="btn btn--ghost" href="/admin/directories/<%= activeEntity %>">Отмена</a>
+          <% } %>
+        </div>
+      </form>
+    </section>
+  </div>
+</section>
+
+<script type="module" src="/js/confirm-delete.js"></script>
