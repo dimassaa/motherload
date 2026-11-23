@@ -2,6 +2,20 @@
 
 Пока пусто. Некритичные находки добавляются сюда по мере работы.
 
+## 2026-11-23, Task 5 — RBAC, users, profile, audit
+
+- `GET /login` returns 404: only `POST /login` is routed. A user who types the
+  address or follows an old bookmark sees the not-found page. Task 4 owns the
+  auth routes; a redirect to `/` would be the natural fix.
+- 400/403/404 responses still use the Task 4 bootstrap HTML without the app
+  layout. Task 6 replaces it with the shared error views; the status codes and
+  Russian messages from this task already flow through that middleware.
+- The navigation bar wraps to a second row for administrators at 1280–1439 px,
+  because ten links plus the identity block no longer fit. All links stay
+  visible instead of being clipped by the previous horizontal scroll, but the
+  header is taller on those widths. A compact admin menu can be considered once
+  the remaining sections add their own navigation entries.
+
 ## 2026-11-22, Task 4 — auth session and rate-limit notes
 
 - Rate-limit counters live in process memory. The spec deploys one application
