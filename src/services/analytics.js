@@ -135,7 +135,7 @@ function buildAbcChart(rows) {
     type: 'pareto',
     labels: rows.map((row) => row.sku),
     values: rows.map((row) => Number(d(row.value).toFixed(2))),
-    cumulative: rows.map((row) => Number((row.cumulativeShare * 100).toFixed(1))),
+    cumulative: rows.map((row) => Number((row.cumulativeShare * 100).toFixed(2))),
   };
 }
 

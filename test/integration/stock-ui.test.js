@@ -109,9 +109,25 @@ test('stock ui: /stock redirects and the navigation never advertises a missing p
   const storekeeperNav = await storekeeper.agent.get('/dashboard');
   assert.equal(storekeeperNav.status, 200);
   assert.match(storekeeperNav.text, /href="\/stock"/);
-  for (const missing of ['/analytics', '/alerts', '/reports']) {
+  assert.match(storekeeperNav.text, /href="\/analytics\/abc"/);
+  assert.match(storekeeperNav.text, /href="\/analytics\/abc"[\s\S]*?Аналитика/);
+  assert.doesNotMatch(storekeeperNav.text, /href="\/analytics"/);
+  for (const missing of ['/alerts', '/reports']) {
     assert.doesNotMatch(
       storekeeperNav.text,
+      new RegExp(`href="${missing}"`),
+      `${missing} must stay hidden until its route exists`,
+    );
+  }
+
+  const admin = await ctx.signIn('admin');
+  const adminNav = await admin.agent.get('/dashboard');
+  assert.equal(adminNav.status, 200);
+  assert.match(adminNav.text, /href="\/analytics\/abc"/);
+  assert.doesNotMatch(adminNav.text, /href="\/analytics"/);
+  for (const missing of ['/alerts', '/reports']) {
+    assert.doesNotMatch(
+      adminNav.text,
       new RegExp(`href="${missing}"`),
       `${missing} must stay hidden until its route exists`,
     );
@@ -125,8 +141,10 @@ test('stock ui: /stock redirects and the navigation never advertises a missing p
   const analystNav = await analyst.agent.get('/dashboard');
   assert.equal(analystNav.status, 200);
   assert.match(analystNav.text, /href="\/components"/);
+  assert.match(analystNav.text, /href="\/analytics\/abc"/);
+  assert.doesNotMatch(analystNav.text, /href="\/analytics"/);
   assert.doesNotMatch(analystNav.text, /href="\/stock"/);
-  for (const missing of ['/analytics', '/alerts', '/reports']) {
+  for (const missing of ['/alerts', '/reports']) {
     assert.doesNotMatch(analystNav.text, new RegExp(`href="${missing}"`));
   }
 });

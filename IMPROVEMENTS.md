@@ -126,16 +126,6 @@ affect the runtime image (`npm prune --omit=dev` in the Dockerfile). Deferred:
 the approved dependency range is `sharp@^0.34`, and the fix requires an upgrade
 decision that belongs to Task 24 (docs, CI, final polish).
 
-## 2026-11-23, Task 18 — analytics pages are not in the main navigation
-
-`/analytics/abc` and `/analytics/xyz` exist and link to each other, but
-`nav-links.ejs` still omits an «Аналитика» entry. Adding it here would have
-required editing a file outside this task's scope and would also invalidate the
-Task 14 regression assertion in `test/integration/stock-ui.test.js` that analytics
-links stay hidden until their routes land. Wire the navigation together with
-Task 19/20, when dashboard and alerts also add entries, and update that assertion
-in the same change.
-
 ## 2026-11-23, Task 18 — analytics and catalog duplicate the reference-date helper
 
 `src/services/analytics.js` repeats the small `ANALYTICS_REFERENCE_DATE` /
@@ -143,4 +133,21 @@ Europe/Minsk "today" helper that `src/services/catalog.js` keeps private. Both
 must agree or the six-month card chart and the XYZ window could describe
 different months. Extract one shared helper when a third caller (reorder or
 alerts) needs it; moving the catalog one now would be an unrelated refactor.
+
+## 2026-11-23, Task 18 — catalog and XYZ use different six-month windows
+
+The component card chart includes the reference month (June–November for
+22.11.2026), while XYZ deliberately uses only full months (May–October). Both
+windows are defensible, but the screens do not explain the difference. Align
+the labels or reuse one window helper before the reports task exposes both
+figures side by side.
+
+## 2026-11-23, Task 18 — monthly issue aggregation SQL is duplicated
+
+`src/repositories/components-read.js:listMonthlyConsumption` and
+`src/repositories/analytics.js:listMonthlyIssues` select issue quantity per
+month with the same document join and Europe/Minsk month bucket. The filters
+and consumers differ, so this stage left both in place. Extract one query when
+a third caller (reports or the dashboard feed) needs the same aggregation.
+
 

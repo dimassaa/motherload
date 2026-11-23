@@ -5,7 +5,6 @@
   });
   const firstMonth = window.months[0];
   const lastMonth = window.months[window.months.length - 1];
-  const cvText = (value) => (value === null ? '—' : formatQty(value));
 %>
 <section aria-labelledby="xyz-title">
   <div class="page-header">
@@ -168,7 +167,7 @@
                     <% if (row.cv === null) { %>
                       <span class="table__cell--muted">нет расхода</span>
                     <% } else { %>
-                      <%= cvText(row.cv) %>
+                      <%= formatNumber(row.cv, 4) %>
                     <% } %>
                   </td>
                   <td class="table__cell">

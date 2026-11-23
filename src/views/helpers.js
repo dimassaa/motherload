@@ -157,6 +157,23 @@ export function formatPct(value, fractionDigits = 1) {
 }
 
 /**
+ * Format a number with a fixed number of fraction digits: `0,1155`.
+ *
+ * Used for dimensionless statistics such as the XYZ coefficient of variation,
+ * where `formatPct` would hide the exact class boundary behind a percentage.
+ * @param {string|number} value
+ * @param {number} [fractionDigits] fixed digit count, defaults to two
+ * @returns {string}
+ */
+export function formatNumber(value, fractionDigits = 2) {
+  const formatter = new Intl.NumberFormat('ru-BY', {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  });
+  return withPlainSpaces(formatter.format(toDisplayNumber(value, 'formatNumber')));
+}
+
+/**
  * Render an amount together with the official BYN sign glyph.
  * The output is trusted HTML; the numeric part is validated, so no user text
  * can reach the template unescaped.

@@ -40,8 +40,8 @@ export async function showAbc(req, res, next) {
       filters,
       options,
       // The page owns an external chart module; the base layout loads it only
-      // when a screen asks, so the rest of the app pays nothing for Chart.js.
-      loadCharts: true,
+      // when a screen asks, and an empty ABC page has no canvas to render.
+      loadCharts: result.rows.length > 0,
     });
   } catch (error) {
     next(error);
@@ -59,6 +59,8 @@ export async function showXyz(req, res, next) {
       ...result,
       filters,
       options,
+      // XYZ renders a matrix, not a canvas: the 206 KB Chart.js bundle would be
+      // dead weight on every XYZ page, including an empty one.
       loadCharts: false,
     });
   } catch (error) {

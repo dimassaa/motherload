@@ -4,12 +4,20 @@
   const allLinks = [
     { href: '/dashboard', label: 'Обзор', roles: ['admin', 'storekeeper', 'analyst'] },
     { href: '/components', label: 'Комплектующие', roles: ['admin', 'storekeeper', 'analyst'] },
+    // ABC is the analytics entry point for every role; XYZ is reached from the
+    // ABC page. `activePrefix` keeps the tab marked while reading XYZ too.
+    {
+      href: '/analytics/abc',
+      label: 'Аналитика',
+      roles: ['admin', 'storekeeper', 'analyst'],
+      activePrefix: '/analytics',
+    },
     // Stock documents are admin/storekeeper only; analysts keep the catalog
     // link instead of a stock link that would immediately answer 403.
     { href: '/stock', label: 'Остатки', roles: ['admin', 'storekeeper'] },
     { href: '/inventory', label: 'Инвентаризация', roles: ['admin', 'storekeeper'] },
-    // Analytics, alerts and reports appear here only when their routes land;
-    // a navigation link must never advertise a page the server does not have.
+    // Alerts and reports appear here only when their routes land; a navigation
+    // link must never advertise a page the server does not have.
     { href: '/admin/users', label: 'Пользователи', roles: ['admin'] },
     { href: '/admin/directories', label: 'Справочники', roles: ['admin'] },
     { href: '/admin/components', label: 'Позиции каталога', roles: ['admin'] },
@@ -18,7 +26,10 @@
 
   const role = currentUser?.role;
   const links = allLinks.filter((link) => link.roles.includes(role));
-  const isActive = (href) => currentPath === href || currentPath.startsWith(`${href}/`);
+  const isActive = (link) => {
+    const prefix = link.activePrefix ?? link.href;
+    return currentPath === prefix || currentPath.startsWith(`${prefix}/`);
+  };
 
   const listClass = typeof navListClass !== 'undefined' ? navListClass : 'app-nav__list';
   const itemClass = typeof navItemClass !== 'undefined' ? navItemClass : 'app-nav__item';
@@ -30,7 +41,7 @@
       <a
         class="<%= linkClass %>"
         href="<%= link.href %>"
-        <%- isActive(link.href) ? 'aria-current="page"' : '' %>
+        <%- isActive(link) ? 'aria-current="page"' : '' %>
       >
         <%= link.label %>
       </a>

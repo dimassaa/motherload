@@ -16,7 +16,7 @@ const moneyFormatter = new Intl.NumberFormat('ru-BY', {
 });
 
 const percentFormatter = new Intl.NumberFormat('ru-BY', {
-  maximumFractionDigits: 1,
+  maximumFractionDigits: 2,
 });
 
 function formatMoney(value) {

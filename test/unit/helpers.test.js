@@ -5,6 +5,7 @@ import {
   formatDate,
   formatDateTime,
   formatMoney,
+  formatNumber,
   formatPct,
   formatQty,
   money,
@@ -56,6 +57,13 @@ test('formatPct uses a comma and one decimal by default', () => {
   assert.equal(formatPct('12.345'), '12,3%');
   assert.equal(formatPct(12), '12,0%');
   assert.equal(formatPct('7.25', 0), '7%');
+  assert.equal(formatPct('80.04', 2), '80,04%');
+});
+
+test('formatNumber keeps a fixed digit count with a Russian comma', () => {
+  assert.equal(formatNumber('0.11547', 4), '0,1155');
+  assert.equal(formatNumber(80.04, 2), '80,04');
+  assert.equal(formatNumber(null, 2), '0,00');
 });
 
 test('money returns trusted markup with the NBRB sign', () => {

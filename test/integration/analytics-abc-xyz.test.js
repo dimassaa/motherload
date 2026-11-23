@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+// Must stay first among local imports: it pins the analytics date before
+// `src/config/env.js` is evaluated by the imports below.
+import '../helpers/pin-analytics-date.js';
 import { query } from '../../src/db/pool.js';
 import { getAbc, getXyz } from '../../src/services/analytics.js';
 import { createTestApp } from '../helpers/app.js';
@@ -469,6 +472,7 @@ test('analytics pages show an empty state for a warehouse without stock', async 
   assert.equal(abcPage.status, 200);
   assert.match(abcPage.text, /Пока нет остатков/);
   assert.doesNotMatch(abcPage.text, /data-chart/);
+  assert.doesNotMatch(abcPage.text, /\/js\/charts\.js/);
 
   const xyzPage = await agent.get(`/analytics/xyz?warehouseId=${references.minsk.id}`);
   assert.equal(xyzPage.status, 200);
@@ -488,6 +492,18 @@ test('analyst can read ABC and XYZ pages while guests are redirected', async () 
     unitCost: '100.0000',
   });
 
+  // A mild but non-zero variation gives the XYZ table a CV to format.
+  for (const [index, qty] of [3, 4, 3, 4, 3, 4].entries()) {
+    const month = String(5 + index).padStart(2, '0');
+    await insertIssue({
+      componentId: component.id,
+      warehouseId: references.minsk.id,
+      qty,
+      at: `2026-${month}-10T10:00:00+03:00`,
+      userId: references.user.id,
+    });
+  }
+
   const agent = await signInAsAnalyst(references);
 
   const abc = await agent.get('/analytics/abc');
@@ -499,6 +515,8 @@ test('analyst can read ABC and XYZ pages while guests are redirected', async () 
   assert.match(abc.text, /\/js\/charts\.js/);
   assert.match(abc.text, /Центральный склад/);
   assert.match(abc.text, /href="\/analytics\/xyz/);
+  assert.match(abc.text, /href="\/analytics\/abc"\s+aria-current="page"/);
+  assert.match(abc.text, /100,00%/);
 
   const xyz = await agent.get('/analytics/xyz');
   assert.equal(xyz.status, 200);
@@ -507,6 +525,10 @@ test('analyst can read ABC and XYZ pages while guests are redirected', async () 
   assert.match(xyz.text, /Коэффициент вариации/);
   assert.match(xyz.text, /Стандартное отклонение/);
   assert.match(xyz.text, /PAGE-ABC-01/);
+  assert.match(xyz.text, /0,1429/);
+  assert.match(xyz.text, /href="\/analytics\/abc/);
+  assert.match(xyz.text, /href="\/analytics\/abc"\s+aria-current="page"/);
+  assert.doesNotMatch(xyz.text, /\/js\/charts\.js/);
   assert.match(xyz.text, /href="\/analytics\/abc/);
 
   // The chart bundle is page-scoped: other screens must not pay for it.
