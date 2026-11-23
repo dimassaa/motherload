@@ -4,7 +4,12 @@ import { query } from '../../src/db/pool.js';
 import { postIssue, postReceipt, previewIssue } from '../../src/services/stock.js';
 import { createTestApp } from '../helpers/app.js';
 import { setupTestDb, teardownTestDb, truncateAll } from '../helpers/db.js';
-import { DEFAULT_TEST_PASSWORD, seedBase } from '../helpers/factories.js';
+import {
+  DEFAULT_TEST_PASSWORD,
+  createComponentFactory,
+  createUserFactory,
+  seedBase,
+} from '../helpers/factories.js';
 import { getCsrf, loginAs } from '../helpers/http.js';
 
 test.before(async () => {
@@ -237,6 +242,8 @@ test('issue rejects a malformed reason or quantity before writing anything', asy
       postIssue(issueInput(ctx, [{ componentId: ctx.componentId, qty: 1 }], { reason: 'theft' })),
     (error) => {
       assert.equal(error.status, 400);
+      assert.equal(error.code, 'VALIDATION_ERROR');
+      assert.equal(error.message, 'Выберите причину расхода.');
       return true;
     },
   );
@@ -245,6 +252,11 @@ test('issue rejects a malformed reason or quantity before writing anything', asy
     () => postIssue(issueInput(ctx, [{ componentId: ctx.componentId, qty: 0 }])),
     (error) => {
       assert.equal(error.status, 400);
+      assert.equal(error.code, 'VALIDATION_ERROR');
+      assert.equal(
+        error.message,
+        'Строка 1: количество должно быть целым числом от 1 до 1 000 000 000.',
+      );
       return true;
     },
   );
@@ -252,6 +264,71 @@ test('issue rejects a malformed reason or quantity before writing anything', asy
   assert.equal(await countIssueDocuments(), 0);
   assert.equal(await countRows('batch_consumptions'), 0);
   assert.equal(await balance(ctx.componentId, ctx.warehouseId), 3);
+});
+
+test('issue rejects duplicate component lines before writing anything', async () => {
+  const ctx = await seedBase();
+  await receive(ctx, 5, '10.0000');
+  const before = {
+    documents: await countRows('stock_documents'),
+    lines: await countRows('stock_document_lines'),
+    movements: await countRows('stock_movements'),
+    sequences: await countRows('document_sequences'),
+  };
+
+  await assert.rejects(
+    () =>
+      postIssue(
+        issueInput(ctx, [
+          { componentId: ctx.componentId, qty: 3 },
+          { componentId: ctx.componentId, qty: 3 },
+        ]),
+      ),
+    (error) => {
+      assert.equal(error.status, 400);
+      assert.equal(error.code, 'VALIDATION_ERROR');
+      assert.equal(error.message, 'Позиция указана несколько раз — объедините строки.');
+      return true;
+    },
+  );
+
+  assert.equal(await countIssueDocuments(), 0);
+  assert.equal(await countRows('stock_documents'), before.documents);
+  assert.equal(await countRows('stock_document_lines'), before.lines);
+  assert.equal(await countRows('batch_consumptions'), 0);
+  assert.equal(await countRows('stock_movements'), before.movements);
+  assert.equal(await countRows('document_sequences'), before.sequences);
+  assert.equal(await balance(ctx.componentId, ctx.warehouseId), 5);
+
+  const { rows: remaining } = await query('select qty_remaining from stock_batches');
+  assert.equal(remaining[0].qty_remaining, 5);
+});
+
+test('issue accepts distinct components in one document', async () => {
+  const ctx = await seedBase();
+  const second = await createComponentFactory({
+    sku: 'RAM-ISSUE-01',
+    name: 'Память тестовая',
+    categoryId: ctx.categoryId,
+    manufacturerId: ctx.manufacturerId,
+    supplierId: ctx.supplierId,
+  });
+  await receive(ctx, 2, '10.0000');
+  await postReceipt({
+    ...ctx.receiptInput,
+    lines: [{ componentId: second.id, qty: 2, unitCost: '20.0000' }],
+  });
+
+  const result = await postIssue(
+    issueInput(ctx, [
+      { componentId: ctx.componentId, qty: 1 },
+      { componentId: second.id, qty: 2 },
+    ]),
+  );
+
+  assert.equal(result.totalCost, '50.00');
+  assert.equal(await balance(ctx.componentId, ctx.warehouseId), 1);
+  assert.equal(await balance(second.id, ctx.warehouseId), 0);
 });
 
 test('previewIssue returns FIFO allocations without writing anything', async () => {
@@ -338,6 +415,26 @@ test('POST /api/fifo-preview rejects guests with 401 JSON', async () => {
   assert.equal(response.status, 401);
   assert.match(response.headers['content-type'], /application\/json/);
   assert.equal(typeof response.body.error, 'string');
+});
+
+test('POST /api/fifo-preview forbids analysts with 403 JSON', async () => {
+  const ctx = await seedBase();
+  await createUserFactory({ email: 'analyst@test.by', role: 'analyst' });
+  const { agent } = createTestApp();
+  await loginAs(agent, 'analyst@test.by', DEFAULT_TEST_PASSWORD);
+  const token = await getCsrf(agent, '/dashboard');
+
+  const response = await agent
+    .post('/api/fifo-preview')
+    .set('X-CSRF-Token', token)
+    .send({
+      warehouseId: ctx.warehouseId,
+      lines: [{ componentId: ctx.componentId, qty: 1 }],
+    });
+
+  assert.equal(response.status, 403);
+  assert.match(response.headers['content-type'], /application\/json/);
+  assert.equal(response.body.error, 'Недостаточно прав для этого действия.');
 });
 
 test('POST /api/fifo-preview requires a CSRF token', async () => {
@@ -459,5 +556,42 @@ test('POST /api/fifo-preview rejects malformed JSON with 400 JSON', async () => 
   assert.deepEqual(response.body, {
     error: 'VALIDATION_ERROR',
     message: 'Тело запроса должно быть корректным JSON.',
+  });
+});
+
+test('POST /api/fifo-preview maps body limits and encodings to 400 JSON', async () => {
+  const { ctx, agent } = await signInStorekeeper();
+  const token = await getCsrf(agent, '/dashboard');
+
+  // `express.json()` keeps its default 100 kb limit; the padding pushes the
+  // request over it before the route runs.
+  const oversized = JSON.stringify({
+    warehouseId: ctx.warehouseId,
+    lines: [{ componentId: ctx.componentId, qty: 1 }],
+    padding: 'x'.repeat(110_000),
+  });
+
+  const tooLarge = await agent
+    .post('/api/fifo-preview')
+    .set('X-CSRF-Token', token)
+    .set('Content-Type', 'application/json')
+    .send(oversized);
+
+  assert.equal(tooLarge.status, 400);
+  assert.deepEqual(tooLarge.body, {
+    error: 'VALIDATION_ERROR',
+    message: 'Тело запроса слишком большое.',
+  });
+
+  const badCharset = await agent
+    .post('/api/fifo-preview')
+    .set('X-CSRF-Token', token)
+    .set('Content-Type', 'application/json; charset=koi8-r')
+    .send('{}');
+
+  assert.equal(badCharset.status, 400);
+  assert.deepEqual(badCharset.body, {
+    error: 'VALIDATION_ERROR',
+    message: 'Неподдерживаемая кодировка запроса. Используйте UTF-8.',
   });
 });

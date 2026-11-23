@@ -149,13 +149,31 @@ function prepareIssueLine(line, position) {
 /**
  * @param {unknown[]} lines
  * @returns {Array<{ componentId: number, qty: number }>}
+ * @throws {ValidationError} on an empty list, a malformed line or a repeated component
  */
 function prepareIssueLines(lines) {
   if (!Array.isArray(lines) || lines.length === 0) {
     throw new ValidationError('Добавьте хотя бы одну строку расхода.');
   }
 
-  return lines.map((line, index) => prepareIssueLine(line, index + 1));
+  const preparedLines = [];
+  const seenComponentIds = new Set();
+
+  for (const [index, line] of lines.entries()) {
+    const prepared = prepareIssueLine(line, index + 1);
+
+    // Two rows for one component would each be planned against the same batch
+    // snapshot, and the second guarded decrement would overdraw the batch. The
+    // form can merge the quantities, so reject the ambiguity before any write.
+    if (seenComponentIds.has(prepared.componentId)) {
+      throw new ValidationError('Позиция указана несколько раз — объедините строки.');
+    }
+
+    seenComponentIds.add(prepared.componentId);
+    preparedLines.push(prepared);
+  }
+
+  return preparedLines;
 }
 
 /**

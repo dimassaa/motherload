@@ -2,16 +2,24 @@
 
 Пока пусто. Некритичные находки добавляются сюда по мере работы.
 
-## 2026-11-23, Task 12 — FIFO preview is advisory for repeated lines and frozen warehouses
+## 2026-11-23, Task 12 — document totals are 2dp while consumption valuations are 4dp
 
-`previewIssue` allocates each requested line against the current batch snapshot
-independently. If the form sends the same component twice, the preview shows each
-row as if it were the only one, so the total can look available while `postIssue`
-would reject the second row. The preview also skips the inventory-freeze check
-that returns 409 on posting, because showing the cost split is still useful on a
-frozen warehouse. Both are acceptable for an advisory preview; Task 14 (issue
-form) decides whether to merge repeated rows client-side and whether to disable
-the preview during a count.
+`stock_documents.total_cost` and `stock_document_lines.total_cost` are
+`numeric(14,2)`, while `batch_consumptions.unit_cost`, `stock_movements.unit_cost`
+and FIFO allocation totals keep four decimals. Rounding at the line boundary means
+a cost report can differ by up to a kopeck depending on whether it sums documents
+or consumption rows. Future cost reports must pick one source deliberately and
+state it; never mix both sources in one reconciliation.
+
+## 2026-11-23, Task 12 — FIFO preview skips the inventory-freeze check
+
+`previewIssue` does not check whether an inventory count is freezing the warehouse,
+while `postIssue` rejects that case with 409. Showing the cost split is still
+useful on a frozen warehouse, and the posting path remains authoritative, so this
+is deliberate for an advisory preview. Task 14 (issue form) decides whether to
+disable preview during a count. Repeated `componentId` lines are rejected at the
+service boundary (400) for both preview and posting, so the optimistic-allocation
+case no longer exists.
 
 ## 2026-11-23, Task 11 — freeze check runs before supplier/component validation
 
