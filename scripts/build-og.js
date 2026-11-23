@@ -3,7 +3,8 @@
  *
  * Kept as a separate script instead of a postinstall step: sharp is a dev
  * dependency, pruned from the runtime image, and the PNG is generated once per
- * asset change. Task 6 owns the SVG content; this script owns the raster size.
+ * asset change. The SVG source is not committed yet; missing SEO assets are an
+ * open item in IMPROVEMENTS.md.
  */
 import { access, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -18,7 +19,9 @@ async function main() {
   try {
     await access(sourcePath);
   } catch {
-    throw new Error('og-cover.svg missing (Task 6 owns it) — expected public/img/og-cover.svg');
+    throw new Error(
+      'og-cover.svg missing — expected public/img/og-cover.svg (open item in IMPROVEMENTS.md)',
+    );
   }
 
   await mkdir(path.dirname(targetPath), { recursive: true });

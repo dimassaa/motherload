@@ -942,6 +942,14 @@ a.app-header__identity:hover {
   box-shadow: var(--shadow-hairline);
 }
 
+/* A horizontally scrolled table is focusable (tabindex="0" in the views) so a
+   keyboard user can scroll it. The focus ring explains why the whole table
+   received focus. */
+.table-wrap:focus-visible {
+  outline: 2px solid var(--color-deep-fern);
+  outline-offset: 2px;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -2329,6 +2337,41 @@ a.app-header__identity:hover {
 }
 
 /* -------------------------------------------------------------- Responsive */
+
+/*
+ * Desktop header. The administrator sees twelve links; placing them beside the
+ * wordmark forced an arbitrary wrap even at 1440 px. Giving the navigation its
+ * own row keeps one predictable line from 1280 px up and leaves the identity
+ * block aligned with the wordmark. Below 1024 px the burger menu replaces this
+ * grid entirely.
+ */
+@media (min-width: 1024px) {
+  .app-header__inner {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      'wordmark user'
+      'nav nav';
+  }
+
+  .app-header__inner > .wordmark {
+    grid-area: wordmark;
+  }
+
+  .app-header__inner > .app-nav {
+    grid-area: nav;
+  }
+
+  .app-header__inner > .app-header__user {
+    grid-area: user;
+  }
+}
+
+/* The burger panel scrolls on short screens. Without a focus target a keyboard
+   user cannot scroll it, which axe reports as scrollable-region-focusable. */
+.app-nav__burger-panel:focus-visible {
+  outline: 2px solid var(--color-deep-fern);
+  outline-offset: 2px;
+}
 
 @media (max-width: 1279px) {
   .landing {

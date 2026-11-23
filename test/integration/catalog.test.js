@@ -205,22 +205,40 @@ test('catalog warehouse filter and stock status follow per-warehouse thresholds'
     minStock: 0,
     maxStock: 4,
   });
+  // 2 < min_stock 5 in the only participating warehouse, so the position is
+  // short in aggregate as well as locally.
+  const short = await createComponentFactory({
+    sku: 'CPU-SHORT-01',
+    name: 'Процессор с общим дефицитом',
+    categoryId: references.categoryId,
+    manufacturerId: references.manufacturerId,
+    supplierId: references.supplierId,
+    minStock: 5,
+  });
 
-  // 3 < min_stock 5 in Minsk, so the summary status is "below minimum" even
-  // though Gomel has enough: the worst participating warehouse wins.
+  // 3 in Minsk is below the 5-unit minimum, but the total of 10 is compared
+  // with the summed minimum of both participating warehouses (5 + 5). The
+  // aggregate row must not alarm while the total covers both thresholds.
   await insertStock({ componentId: low.id, warehouseId: minsk.id, qty: 3 });
   await insertStock({ componentId: low.id, warehouseId: gomel.id, qty: 7 });
   await insertStock({ componentId: healthy.id, warehouseId: minsk.id, qty: 10 });
   await insertStock({ componentId: overstock.id, warehouseId: minsk.id, qty: 10 });
+  await insertStock({ componentId: short.id, warehouseId: minsk.id, qty: 2 });
 
   const { agent } = await signInAs('analyst');
 
   const belowMin = await agent.get('/components?status=below_min');
   assert.equal(belowMin.status, 200);
-  assert.match(belowMin.text, /CPU-LOW-01/);
+  assert.match(belowMin.text, /CPU-SHORT-01/);
   assert.match(belowMin.text, /Ниже минимума/);
+  assert.doesNotMatch(belowMin.text, /CPU-LOW-01/);
   assert.doesNotMatch(belowMin.text, /CPU-OK-01/);
   assert.doesNotMatch(belowMin.text, /CPU-MAX-01/);
+
+  const lowAggregate = await agent.get('/components?q=CPU-LOW-01');
+  assert.equal(lowAggregate.status, 200);
+  assert.match(lowAggregate.text, /CPU-LOW-01/);
+  assert.match(lowAggregate.text, /В норме/);
 
   const overstockRows = await agent.get('/components?status=overstock');
   assert.equal(overstockRows.status, 200);
@@ -261,7 +279,7 @@ test('catalog warehouse filter and stock status follow per-warehouse thresholds'
   assert.match(invalidStatus.text, /CPU-EMPTY-01/);
 });
 
-test('zero stock wins over below_min in the catalog summary and on the card', async () => {
+test('zero stock is the catalog summary only when the total balance is zero', async () => {
   const references = await seedReferences();
   const { minsk, gomel } = references.warehouses;
 
@@ -285,8 +303,9 @@ test('zero stock wins over below_min in the catalog summary and on the card', as
     [zeroed.id, minsk.id],
   );
 
-  // A position with stock in Gomel but a zero-stock active warehouse in Minsk
-  // must summarise as zero: the empty warehouse is the most severe status.
+  // A position with stock in Gomel and a locally empty Minsk warehouse is not
+  // empty overall: the summary compares the total balance with the summed
+  // thresholds, while the per-warehouse rows keep their own status.
   const partial = await createComponentFactory({
     sku: 'CPU-PARTIAL-01',
     name: 'Процессор частично пустой',
@@ -314,7 +333,14 @@ test('zero stock wins over below_min in the catalog summary and on the card', as
 
   const partialZero = await agent.get('/components?status=zero&q=CPU-PARTIAL-01');
   assert.equal(partialZero.status, 200);
-  assert.match(partialZero.text, /CPU-PARTIAL-01/);
+  // The query itself is echoed in the search field, so the row is identified by
+  // its name rather than by the SKU.
+  assert.doesNotMatch(partialZero.text, /Процессор частично пустой/);
+
+  const partialHealthy = await agent.get('/components?q=CPU-PARTIAL-01');
+  assert.equal(partialHealthy.status, 200);
+  assert.match(partialHealthy.text, /Процессор частично пустой/);
+  assert.match(partialHealthy.text, /В норме/);
 
   // Zero stock must not masquerade as below-minimum: the threshold is not the
   // reason the position needs attention.
@@ -326,6 +352,12 @@ test('zero stock wins over below_min in the catalog summary and on the card', as
   assert.equal(card.status, 200);
   assert.match(card.text, /Центральный склад/);
   assert.match(card.text, /Нет остатка/);
+
+  // The card keeps the per-warehouse truth: Minsk is empty, Gomel holds stock.
+  const partialCard = await agent.get(`/components/${partial.id}`);
+  assert.equal(partialCard.status, 200);
+  assert.match(partialCard.text, /Центральный склад[\s\S]*?Нет остатка/);
+  assert.match(partialCard.text, /Региональный склад Гомель[\s\S]*?В норме/);
 });
 
 test('catalog sorts by value descending', async () => {

@@ -1,6 +1,6 @@
 <%
-  // Private pages are never indexed; the public landing stays indexable until
-  // Task 6 adds canonical/OG metadata on top.
+  // Private pages are never indexed; the public landing stays indexable.
+  // Canonical/Open Graph metadata is not emitted yet (open item in IMPROVEMENTS.md).
   const pageNoindex = typeof noindex === 'undefined' ? Boolean(currentUser) : noindex;
 %>
 <meta charset="utf-8">

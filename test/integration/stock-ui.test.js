@@ -176,6 +176,31 @@ test('stock ui: row errors mark the inputs they belong to', async () => {
   assert.match(response.text, /id="stock-line-0-unitCost-error"[^>]*>\s*Строка 1: цена/);
 });
 
+test('stock ui: an out-of-range component id is a field error, not a database 500', async () => {
+  const ctx = await seedStock();
+  const storekeeper = await ctx.signIn('storekeeper');
+  const token = await getCsrf(storekeeper.agent, '/stock/receipts/new');
+
+  const response = await storekeeper.agent
+    .post('/stock/receipts')
+    .type('form')
+    .send({
+      supplierId: String(ctx.supplierId),
+      warehouseId: String(ctx.warehouseId),
+      docDate: '2026-11-22',
+      // Larger than the `integer` column but still a safe JavaScript integer:
+      // the rejected form must not hand this value to a PostgreSQL int[] cast.
+      'lines[0][componentId]': '3000000000',
+      'lines[0][qty]': '0',
+      'lines[0][unitCost]': '10',
+      _csrf: token,
+    });
+
+  assert.equal(response.status, 400);
+  assert.match(response.text, /Строка 1: выберите позицию/);
+  assert.equal(await countRows('stock_documents'), 0);
+});
+
 test('stock ui: duplicate components name the offending row', async () => {
   const ctx = await seedStock();
   await receive(ctx, 5);

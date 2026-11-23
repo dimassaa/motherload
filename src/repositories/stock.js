@@ -10,6 +10,16 @@ const DOCUMENT_PREFIXES = {
 
 const SEQUENCE_DIGITS = 4;
 
+// Identifier columns are PostgreSQL `integer`. A larger JavaScript number is
+// still a safe integer but cannot be cast to `int[]`, so it is never handed to
+// the database: a rejected form must stay a 400, not become a 22003 behind 500.
+const INTEGER_MAX = 2_147_483_647;
+
+/** Keep only ids that can be cast to the `int4` columns. */
+function databaseIds(ids) {
+  return [...new Set(ids.filter((id) => Number.isSafeInteger(id) && id > 0 && id <= INTEGER_MAX))];
+}
+
 /**
  * Reserve the next document number for a type and year.
  *
@@ -122,7 +132,7 @@ export async function findSupplierById(client, supplierId) {
 export async function findComponentsByIds(client, componentIds) {
   const { rows } = await client.query(
     'select id, sku, name, is_active from components where id = any($1::int[])',
-    [componentIds],
+    [databaseIds(componentIds)],
   );
 
   return rows.map((row) => ({
@@ -672,7 +682,7 @@ export async function listDocumentLineViews(documentId) {
  * }>>}
  */
 export async function listFormComponents(includeIds = []) {
-  const ids = [...new Set(includeIds.filter((id) => Number.isSafeInteger(id) && id > 0))];
+  const ids = databaseIds(includeIds);
   const { rows } = await pool.query(
     `select id, sku, name, unit, is_active
      from components

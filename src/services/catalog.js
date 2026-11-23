@@ -1,7 +1,7 @@
 import { env } from '../config/env.js';
 import { NotFoundError } from '../domain/errors.js';
 import { d } from '../domain/money.js';
-import { stockStatus, worstStockStatus } from '../domain/stock-status.js';
+import { aggregateStockStatus, stockStatus } from '../domain/stock-status.js';
 import * as repository from '../repositories/components-read.js';
 import { getReorder } from './analytics.js';
 
@@ -117,21 +117,15 @@ function replenishmentPlaceholder() {
 /**
  * Classify one catalog candidate with the shared stock rule.
  *
- * The repository returns the participating warehouse inputs. A component with
- * no participating warehouse is `zero` when it has no stock at all; otherwise
- * the worst per-warehouse status wins.
+ * The repository returns either the participating warehouses (all-warehouse
+ * mode) or the selected warehouse alone. `aggregateStockStatus` compares the
+ * row's total balance with the summed thresholds, so an empty Minsk warehouse
+ * does not hide the four units held in Gomel. Under a warehouse filter the
+ * state set has one element and the aggregate reduces to the local status.
  */
 function classifyCatalogRow(row) {
-  const states = Array.isArray(row.warehouseStates) ? row.warehouseStates : [];
-  let status;
-
-  if (states.length === 0) {
-    status = row.qty === 0 ? 'zero' : 'ok';
-  } else {
-    status = worstStockStatus(states.map((state) => stockStatus(state)));
-  }
-
-  return { ...row, status };
+  const warehouses = Array.isArray(row.warehouseStates) ? row.warehouseStates : [];
+  return { ...row, status: aggregateStockStatus({ qty: row.qty, warehouses }) };
 }
 
 function compareCatalogRows(a, b, sort, direction) {

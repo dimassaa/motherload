@@ -469,7 +469,7 @@ test('alert recalculation uses stock age for dead stock, not prior demand', asyn
   assert.equal(rows.length, 1);
   assert.equal(rows[0].type, 'dead_stock');
   assert.equal(rows[0].component_id, old.id);
-  assert.match(rows[0].message, /без расхода 90 дней/);
+  assert.match(rows[0].message, /не списывался 90\+ дней/);
   assert.ok(!rows.some((row) => row.component_id === restocked.id));
 });
 
@@ -578,7 +578,7 @@ test('alert recalculation flags overstock and dead stock without false positives
 
   const dead = rows.find((row) => row.type === 'dead_stock');
   assert.match(dead.message, /остаток 9 шт\./);
-  assert.match(dead.message, /без расхода 90 дней/);
+  assert.match(dead.message, /не списывался 90\+ дней/);
 
   // Freshly received stock is not dead: it has not been sitting for the full
   // window, and a never-issued position carries no demand history to compare.

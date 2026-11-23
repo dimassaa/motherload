@@ -15,7 +15,9 @@ function escapeHtml(value) {
 
 /**
  * Reply in the shape the caller expects: API clients want JSON, browsers want a
- * readable page. This bootstrap page is replaced by the real error views in Task 6.
+ * readable page. The HTML is intentionally minimal and does not use the app
+ * layout; switching it to the shared error views is an open item in
+ * IMPROVEMENTS.md.
  */
 function respond(req, res, status, message, details) {
   if (req.path.startsWith('/api')) {
