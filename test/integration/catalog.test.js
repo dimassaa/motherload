@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { query } from '../../src/db/pool.js';
+import { getReorder } from '../../src/services/analytics.js';
+import { formatNumber } from '../../src/views/helpers.js';
 import { createTestApp } from '../helpers/app.js';
 import { setupTestDb, teardownTestDb, truncateAll } from '../helpers/db.js';
 import {
@@ -725,6 +727,89 @@ test('component card shows six-month consumption for all warehouses or one', asy
   assert.equal(malformed.status, 200);
   assert.match(malformed.text, /Расход по месяцам: все склады/);
   assert.match(malformed.text, /Итого за 6 месяцев: 8 шт/);
+});
+
+test('component card shows real replenishment values and per-warehouse detail', async () => {
+  const references = await seedReferences();
+  const { minsk, gomel } = references.warehouses;
+  const component = await createComponentFactory({
+    sku: 'CPU-REORDER-01',
+    name: 'Процессор с историей расхода',
+    categoryId: references.categoryId,
+    manufacturerId: references.manufacturerId,
+    supplierId: references.supplierId,
+    minStock: 4,
+  });
+  const { agent, user } = await signInAs('analyst');
+
+  // The first issue must be at least 14 days before the pinned reference date
+  // (22.11.2026), otherwise the block falls back to min_stock and the test would
+  // never exercise the statistical ROP/EOQ path.
+  await insertIssue({
+    componentId: component.id,
+    warehouseId: minsk.id,
+    qty: 30,
+    at: '2026-09-01T09:00:00+03:00',
+    number: 'РС-2026-0101',
+    userId: user.id,
+  });
+  await insertIssue({
+    componentId: component.id,
+    warehouseId: minsk.id,
+    qty: 30,
+    at: '2026-10-01T09:00:00+03:00',
+    number: 'РС-2026-0102',
+    userId: user.id,
+  });
+  await insertIssue({
+    componentId: component.id,
+    warehouseId: gomel.id,
+    qty: 20,
+    at: '2026-09-10T09:00:00+03:00',
+    number: 'РС-2026-0103',
+    userId: user.id,
+  });
+
+  const { rows } = await getReorder({});
+  const aggregate = rows.find((row) => row.componentId === component.id);
+  assert.ok(aggregate, 'the fixture must produce a reorder row');
+  assert.equal(aggregate.warehouseCount, 2);
+  assert.equal(aggregate.lowData, false);
+
+  const card = await agent.get(`/components/${component.id}`);
+  assert.equal(card.status, 200);
+  assert.doesNotMatch(card.text, /Расчёт появится/);
+
+  const rop = formatNumber(aggregate.rop, 2);
+  const eoq = formatNumber(aggregate.eoq, 2);
+  assert.match(
+    card.text,
+    new RegExp(`Точка заказа \\(ROP\\)</dt>\\s*<dd>${rop.replace('.', '\\.')}</dd>`),
+  );
+  assert.match(card.text, new RegExp(`EOQ</dt>\\s*<dd>${eoq.replace('.', '\\.')}</dd>`));
+  assert.notEqual(rop, '0,00', 'a consumed position must have a non-zero aggregated ROP');
+
+  // The aggregate row is a sum, so the card must disclose which warehouses
+  // contribute instead of hiding the breakdown behind one number.
+  assert.match(card.text, /Склады: 2/);
+  assert.match(card.text, /warehouse-breakdown/);
+  assert.match(card.text, /Центральный склад/);
+  assert.match(card.text, /Региональный склад Гомель/);
+
+  // A selected warehouse narrows the block to that pair and drops the
+  // cross-warehouse disclosure.
+  const minskPair = aggregate.warehouses.find((pair) => pair.warehouse.warehouseId === minsk.id);
+  assert.ok(minskPair);
+  const minskCard = await agent.get(`/components/${component.id}?warehouseId=${minsk.id}`);
+  assert.equal(minskCard.status, 200);
+  assert.match(minskCard.text, /Расчёт для выбранного склада: Центральный склад/);
+  assert.match(
+    minskCard.text,
+    new RegExp(
+      `Точка заказа \\(ROP\\)</dt>\\s*<dd>${formatNumber(minskPair.rop, 2).replace('.', '\\.')}</dd>`,
+    ),
+  );
+  assert.doesNotMatch(minskCard.text, /warehouse-breakdown/);
 });
 
 test('unknown component returns a 404 page', async () => {

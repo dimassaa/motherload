@@ -1,4 +1,5 @@
 import { pool } from '../db/pool.js';
+import { likePattern } from './components-read.js';
 
 /**
  * SQL for the component catalog.
@@ -68,8 +69,10 @@ function buildFilters({ q = '', categoryId = null, manufacturerId = null, isActi
   const params = [];
 
   if (q) {
-    params.push(`%${q}%`);
-    conditions.push(`(c.name ilike $${params.length} or c.sku ilike $${params.length})`);
+    params.push(likePattern(q));
+    conditions.push(
+      `(c.name ilike $${params.length} escape '\\' or c.sku ilike $${params.length} escape '\\')`,
+    );
   }
   if (categoryId !== null && categoryId !== undefined) {
     params.push(categoryId);

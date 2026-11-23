@@ -289,6 +289,43 @@ test('the list filters by search, category and status', async () => {
   assert.match(active.text, /Позиции не найдены/);
 });
 
+test('admin search treats LIKE wildcards as literal characters', async () => {
+  const references = await seedReferences();
+  await createComponentFactory({
+    sku: 'CPU-PERCENT-01',
+    name: 'Процессор со скидкой 100%',
+    categoryId: references.categoryId,
+    manufacturerId: references.manufacturerId,
+    supplierId: references.supplierId,
+  });
+  await createComponentFactory({
+    sku: 'CPU-PLAIN-01',
+    name: 'Обычный процессор',
+    categoryId: references.categoryId,
+    manufacturerId: references.manufacturerId,
+    supplierId: references.supplierId,
+  });
+  await createComponentFactory({
+    sku: 'CPU_UNDERSCORE',
+    name: 'Процессор с подчёркиванием',
+    categoryId: references.categoryId,
+    manufacturerId: references.manufacturerId,
+    supplierId: references.supplierId,
+  });
+
+  const { agent } = await signInAs('admin');
+
+  const percent = await agent.get('/admin/components').query({ q: '%' });
+  assert.equal(percent.status, 200);
+  assert.match(percent.text, /CPU-PERCENT-01/);
+  assert.doesNotMatch(percent.text, /CPU-PLAIN-01/);
+
+  const underscore = await agent.get('/admin/components').query({ q: '_' });
+  assert.equal(underscore.status, 200);
+  assert.match(underscore.text, /CPU_UNDERSCORE/);
+  assert.doesNotMatch(underscore.text, /CPU-PLAIN-01/);
+});
+
 test('the list paginates at 25 positions per page', async () => {
   const references = await seedReferences();
 

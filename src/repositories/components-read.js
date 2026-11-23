@@ -24,7 +24,7 @@ const BATCH_LIMIT = 200;
  * turn into a wildcard. PostgreSQL's default LIKE escape character is a
  * backslash; the query states it explicitly for readability.
  */
-function likePattern(value) {
+export function likePattern(value) {
   return `%${value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`;
 }
 

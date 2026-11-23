@@ -164,7 +164,9 @@
                   <td class="table__cell table__cell--num">
                     <%= warehouse.maxStock === null ? '—' : formatQty(warehouse.maxStock) %>
                   </td>
-                  <td class="table__cell table__cell--num table__cell--muted">—</td>
+                  <td class="table__cell table__cell--num">
+                    <%= warehouse.rop === null || warehouse.rop === undefined ? '—' : formatNumber(warehouse.rop, 2) %>
+                  </td>
                   <td class="table__cell">
                     <%- include('../../partials/status-chip', { status: warehouse.status }) %>
                   </td>
@@ -277,32 +279,106 @@
 
       <section class="card" aria-labelledby="component-replenishment-title">
         <h2 id="component-replenishment-title" class="card__title">Параметры пополнения</h2>
-        <p class="card__text">
-          Расчёт появится вместе с точкой заказа. Пока значения не определены.
-        </p>
 
-        <dl class="definition-list">
-          <div class="definition-list__row">
-            <dt>Средний дневной расход</dt>
-            <dd>—</dd>
-          </div>
-          <div class="definition-list__row">
-            <dt>Страховой запас</dt>
-            <dd>—</dd>
-          </div>
-          <div class="definition-list__row">
-            <dt>Точка заказа (ROP)</dt>
-            <dd>—</dd>
-          </div>
-          <div class="definition-list__row">
-            <dt>EOQ</dt>
-            <dd>—</dd>
-          </div>
-          <div class="definition-list__row">
-            <dt>Рекомендуемый заказ</dt>
-            <dd>—</dd>
-          </div>
-        </dl>
+        <% if (replenishment.available) { %>
+          <p class="card__text">
+            <% if (consumption.warehouseId !== null) { %>
+              Расчёт для выбранного склада: <%= consumption.warehouseName %>.
+            <% } else if (replenishment.warehouseCount > 1) { %>
+              Остатки, точка заказа и рекомендуемый заказ просуммированы по складам, где позиция
+              хранится или двигалась за 180 дней; EOQ — максимум по складам.
+            <% } else { %>
+              Расчёт для склада, где позиция хранится или двигалась за 180 дней.
+            <% } %>
+            <% if (replenishment.lowData) { %>
+              Меньше 14 дней истории расхода: точка заказа взята из минимального остатка.
+            <% } %>
+          </p>
+
+          <dl class="definition-list">
+            <div class="definition-list__row">
+              <dt>Средний дневной расход</dt>
+              <dd>
+                <%= formatNumber(replenishment.averageDailyUsage, 3) %> <%= component.unit %>/день
+              </dd>
+            </div>
+            <div class="definition-list__row">
+              <dt>Страховой запас</dt>
+              <dd><%= formatNumber(replenishment.safetyStock, 2) %> <%= component.unit %></dd>
+            </div>
+            <div class="definition-list__row">
+              <dt>Точка заказа (ROP)</dt>
+              <dd><%= formatNumber(replenishment.reorderPoint, 2) %></dd>
+            </div>
+            <div class="definition-list__row">
+              <dt>EOQ</dt>
+              <dd><%= formatNumber(replenishment.eoq, 2) %></dd>
+            </div>
+            <div class="definition-list__row">
+              <dt>Рекомендуемый заказ</dt>
+              <dd>
+                <strong><%= formatQty(replenishment.recommendedOrder) %></strong>
+                <%= component.unit %>
+              </dd>
+            </div>
+          </dl>
+
+          <% if (replenishment.warehouses.length > 1) { %>
+            <details class="table__details">
+              <summary>Склады: <%= formatQty(replenishment.warehouseCount) %></summary>
+              <ul class="warehouse-breakdown">
+                <% for (const pair of replenishment.warehouses) { %>
+                  <li class="warehouse-breakdown__item">
+                    <span class="warehouse-breakdown__name"><%= pair.warehouse.name %></span>
+                    <span>
+                      остаток <%= formatQty(pair.balance) %> ·
+                      ROP <%= formatNumber(pair.rop, 2) %> ·
+                      EOQ <%= formatNumber(pair.eoq, 2) %> ·
+                      заказать <%= formatQty(pair.suggested) %>
+                    </span>
+                    <% if (pair.lowData) { %>
+                      <span class="tag tag--plain">мало данных</span>
+                    <% } %>
+                  </li>
+                <% } %>
+              </ul>
+            </details>
+
+            <% if (replenishment.warehousesBelowRop > 0) { %>
+              <p class="page-header__meta">
+                Ниже точки заказа: <%= formatQty(replenishment.warehousesBelowRop) %> из
+                <%= formatQty(replenishment.warehouseCount) %> складов.
+              </p>
+            <% } %>
+          <% } %>
+        <% } else { %>
+          <p class="card__text">
+            Нет данных для расчёта: за последние 180 дней позиция не хранилась и не расходовалась
+            на выбранном складе.
+          </p>
+          <dl class="definition-list">
+            <div class="definition-list__row">
+              <dt>Средний дневной расход</dt>
+              <dd>—</dd>
+            </div>
+            <div class="definition-list__row">
+              <dt>Страховой запас</dt>
+              <dd>—</dd>
+            </div>
+            <div class="definition-list__row">
+              <dt>Точка заказа (ROP)</dt>
+              <dd>—</dd>
+            </div>
+            <div class="definition-list__row">
+              <dt>EOQ</dt>
+              <dd>—</dd>
+            </div>
+            <div class="definition-list__row">
+              <dt>Рекомендуемый заказ</dt>
+              <dd>—</dd>
+            </div>
+          </dl>
+        <% } %>
       </section>
     </div>
 

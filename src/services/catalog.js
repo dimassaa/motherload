@@ -100,10 +100,11 @@ function buildConsumption(monthlyRows, reference) {
 }
 
 /**
- * Replenishment calculations belong to Task 19 (reorder point and EOQ). Until
- * then the card renders explicit placeholders instead of guessed numbers.
+ * The card has no planning row when a position has neither stock nor movement
+ * on the selected warehouse during the activity window. Returning explicit
+ * nulls lets the template say "no data" rather than render a fake zero.
  */
-function replenishmentPlaceholder() {
+function unavailableReplenishment() {
   return {
     available: false,
     averageDailyUsage: null,
@@ -111,6 +112,44 @@ function replenishmentPlaceholder() {
     reorderPoint: null,
     eoq: null,
     recommendedOrder: null,
+    lowData: false,
+    warehouseCount: 0,
+    warehousesBelowRop: 0,
+    warehouses: [],
+  };
+}
+
+/**
+ * Replenishment block for one component (§5.4, §6.6).
+ *
+ * Reusing `getReorder` keeps the card, the reorder page and the dashboard in
+ * agreement about the same pair; recomputing the statistics here would create
+ * a second source of truth for ROP. With a warehouse selected the row is that
+ * pair alone. Without one, `getReorder` returns the §6.6 aggregate: balances,
+ * ROP and recommended order summed across participating warehouses, EOQ as the
+ * maximum. Its `warehouses` detail is preserved for the disclosure list.
+ *
+ * @param {number} componentId
+ * @param {{ warehouseId?: number | null }} [selection]
+ */
+async function buildReplenishment(componentId, { warehouseId = null } = {}) {
+  const { rows } = await getReorder({ warehouseId });
+  const row = rows.find((item) => item.componentId === componentId);
+  if (!row) return unavailableReplenishment();
+
+  return {
+    available: true,
+    averageDailyUsage: row.avgDaily,
+    safetyStock: row.safetyStock,
+    reorderPoint: row.rop,
+    eoq: row.eoq,
+    recommendedOrder: row.suggested,
+    lowData: row.lowData,
+    warehouseCount: warehouseId ? 1 : row.warehouseCount,
+    warehousesBelowRop: warehouseId ? (row.belowRop ? 1 : 0) : row.warehousesBelowRop,
+    // A single selected warehouse still travels as a one-element list so the
+    // balance table can publish its ROP without a second lookup.
+    warehouses: warehouseId ? [row] : row.warehouses,
   };
 }
 
@@ -307,7 +346,7 @@ export async function getById(id, { showAll = false, movementsPage = 1, warehous
   const movementPage = Math.min(requested, movementPages);
   const months = monthBuckets(reference);
 
-  const [movements, monthlyRows] = await Promise.all([
+  const [movements, monthlyRows, replenishment] = await Promise.all([
     repository.listMovements(id, {
       limit: MOVEMENTS_PAGE_SIZE,
       offset: (movementPage - 1) * MOVEMENTS_PAGE_SIZE,
@@ -317,18 +356,32 @@ export async function getById(id, { showAll = false, movementsPage = 1, warehous
       end: months[months.length - 1].end,
       warehouseId: selectedWarehouse?.warehouseId ?? null,
     }),
+    buildReplenishment(id, {
+      warehouseId: selectedWarehouse?.warehouseId ?? null,
+    }),
   ]);
 
+  // The balance table has its own ROP column. Publish the planning value on
+  // every row that participates in the reorder calculation; a warehouse with
+  // stock but no planning pair keeps the dash instead of a misleading zero.
+  const ropByWarehouse = new Map(
+    replenishment.warehouses.map((pair) => [pair.warehouse.warehouseId, pair.rop]),
+  );
+  const warehousesWithRop = warehousesWithStatus.map((row) => ({
+    ...row,
+    rop: ropByWarehouse.get(row.warehouseId) ?? null,
+  }));
+
   const visibleWarehouses = showAll
-    ? warehousesWithStatus
-    : warehousesWithStatus.filter((row) => row.hasActivity);
-  const hiddenWarehouses = warehousesWithStatus.length - visibleWarehouses.length;
+    ? warehousesWithRop
+    : warehousesWithRop.filter((row) => row.hasActivity);
+  const hiddenWarehouses = warehousesWithRop.length - visibleWarehouses.length;
 
   return {
     component,
     warehouses: {
       items: visibleWarehouses,
-      all: warehousesWithStatus,
+      all: warehousesWithRop,
       showAll,
       hiddenCount: hiddenWarehouses,
     },
@@ -344,7 +397,7 @@ export async function getById(id, { showAll = false, movementsPage = 1, warehous
       warehouseId: selectedWarehouse?.warehouseId ?? null,
       warehouseName: selectedWarehouse?.name ?? null,
     },
-    replenishment: replenishmentPlaceholder(),
+    replenishment,
   };
 }
 
