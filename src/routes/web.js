@@ -165,6 +165,7 @@ export function createWebRouter({ loginLimiter }) {
   router.post('/admin/users/:id/password', requireRole('admin'), adminController.resetPassword);
   router.post('/admin/users/:id/toggle', requireRole('admin'), adminController.toggleUser);
   router.get('/admin/audit', requireRole('admin'), adminController.showAudit);
+  router.get('/admin/backups', requireRole('admin'), adminController.showBackups);
 
   // Reference data is one screen with tabs; the tab is part of the URL so a
   // bookmark and the back button both return to the same directory.

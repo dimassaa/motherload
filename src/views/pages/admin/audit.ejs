@@ -81,6 +81,10 @@
     </div>
   </form>
 
+  <% if (dateRangeMessage) { %>
+    <p class="filter-bar__notice" role="alert"><%= dateRangeMessage %></p>
+  <% } %>
+
   <% if (entries.length === 0) { %>
     <%- include('../../partials/empty-state', {
       title: 'Записей пока нет',
@@ -122,10 +126,14 @@
               </td>
               <td class="table__cell table__cell--code"><%= entry.ip ?? '—' %></td>
               <td class="table__cell">
-                <details class="details-json">
-                  <summary>Показать JSON</summary>
-                  <pre><%= entry.detailsJson %></pre>
-                </details>
+                <% if (entry.detailsJson) { %>
+                  <details class="details-json">
+                    <summary>Показать JSON</summary>
+                    <pre><%= entry.detailsJson %></pre>
+                  </details>
+                <% } else { %>
+                  <span class="table__cell--muted">—</span>
+                <% } %>
               </td>
             </tr>
           <% } %>

@@ -1,0 +1,93 @@
+<section aria-labelledby="backups-title">
+  <div class="page-header">
+    <h1 id="backups-title" class="page-header__title">Резервные копии</h1>
+    <p class="page-header__meta">Хранение: <%= retentionDays %> дней</p>
+  </div>
+
+  <% if (lastBackup) { %>
+    <div class="backup-status<%= lastBackup.expired ? ' backup-status--stale' : '' %>">
+      <p class="backup-status__text">
+        Последний бэкап: <span class="backup-status__name"><%= lastBackup.name %></span> —
+        <%= formatDateTime(lastBackup.modifiedAt) %>, <%= lastBackup.ageLabel %>.
+      </p>
+      <% if (lastBackup.expired) { %>
+        <p class="backup-status__warning" role="status">
+          <span class="chip chip--warning">
+            <span class="chip__dot" aria-hidden="true"></span>
+            Копия старше <%= retentionDays %> дней
+          </span>
+          Проверьте планировщик: свежая копия не создавалась слишком долго.
+        </p>
+      <% } %>
+    </div>
+  <% } else { %>
+    <%- include('../../partials/empty-state', {
+      title: 'Резервных копий пока нет',
+      text: 'Запустите npm run backup на сервере — файл появится в папке backups/ и его можно будет проверить здесь.',
+    }) %>
+  <% } %>
+
+  <div class="card-grid backup-instructions">
+    <section class="card" aria-labelledby="backup-create-title">
+      <h2 id="backup-create-title" class="card__title">Создать копию</h2>
+      <p class="card__text">
+        На сервере выполните команду. Скрипт вызывает pg_dump и сохраняет
+        <code class="backup-code">motherload-ГГГГММДД-ЧЧММСС.dump</code> в папку
+        <code class="backup-code">backups/</code>.
+      </p>
+      <pre class="backup-command"><code>npm run backup</code></pre>
+    </section>
+
+    <section class="card" aria-labelledby="backup-restore-title">
+      <h2 id="backup-restore-title" class="card__title">Восстановить базу</h2>
+      <p class="card__text">
+        Команда заменяет данные текущей базы, поэтому требует явного подтверждения.
+        Остановите приложение перед восстановлением.
+      </p>
+      <pre class="backup-command"><code>npm run restore -- backups/&lt;файл&gt;.dump --yes</code></pre>
+    </section>
+  </div>
+
+  <p class="backup-note">
+    Файлы лежат только на сервере: через браузер дампы не отдаются, кнопки скачивания нет.
+    Копии старше <%= retentionDays %> дней удаляются при следующем запуске
+    <code class="backup-code">npm run backup</code>.
+  </p>
+
+  <section class="section" aria-labelledby="backup-files-title">
+    <div class="section__title">
+      <h2 id="backup-files-title" class="card__title">Файлы в backups/</h2>
+      <span class="page-header__meta">Всего: <%= files.length %></span>
+    </div>
+
+    <% if (files.length === 0) { %>
+      <%- include('../../partials/empty-state', {
+        title: 'Папка пуста',
+        text: 'Как только появится первый дамп, здесь будут имя файла, размер, дата изменения и возраст копии.',
+      }) %>
+    <% } else { %>
+      <div class="table-wrap table-wrap--spaced">
+        <table class="table">
+          <thead class="table__head">
+            <tr>
+              <th class="table__heading" scope="col">Файл</th>
+              <th class="table__heading" scope="col">Размер</th>
+              <th class="table__heading" scope="col">Изменён</th>
+              <th class="table__heading" scope="col">Возраст</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% for (const file of files) { %>
+              <tr class="table__row">
+                <td class="table__cell table__cell--code"><%= file.name %></td>
+                <td class="table__cell table__cell--num"><%= file.sizeLabel %></td>
+                <td class="table__cell table__cell--code"><%= formatDateTime(file.modifiedAt) %></td>
+                <td class="table__cell"><%= file.ageLabel %></td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </section>
+</section>

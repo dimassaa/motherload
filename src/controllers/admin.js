@@ -1,4 +1,8 @@
+import { mkdir, readdir, stat } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { BACKUP_RETENTION_DAYS, formatFileSize, isBackupExpired } from '../domain/backup.js';
 import { NotFoundError, ValidationError } from '../domain/errors.js';
 import { fieldErrorsFromZod, messagesFromZod, parseOrThrow } from '../middleware/validate.js';
 import * as auditService from '../services/audit.js';
@@ -6,6 +10,7 @@ import * as usersService from '../services/users.js';
 import { createUserSchema, resetPasswordSchema, updateUserSchema } from '../validation/users.js';
 
 const USERS_PATH = '/admin/users';
+const BACKUPS_DIR = fileURLToPath(new URL('../../backups', import.meta.url));
 
 function isRealDate(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -254,6 +259,40 @@ export async function toggleUser(req, res, next) {
   }
 }
 
+// Secrets must never reach the audit screen. Writers already keep them out of
+// `details` (the service contract says so), but the page applies the same rule
+// on read: a missed call site must not leak a hash to administrators.
+const SECRET_DETAIL_KEY = /pass(?:word|wd)?|hash|token|secret|authorization|cookie|session/i;
+
+/**
+ * Replace values under secret-looking keys, walking nested objects and arrays.
+ * The key names stay visible so an operator sees that something was recorded,
+ * while the value is replaced with a fixed placeholder.
+ * @param {unknown} value
+ * @param {number} [depth] guards against pathological nesting in old rows
+ * @returns {unknown}
+ */
+function redactSecretDetails(value, depth = 0) {
+  if (depth > 5) return '[вложенность скрыта]';
+  if (Array.isArray(value)) {
+    return value.map((item) => redactSecretDetails(item, depth + 1));
+  }
+  if (value === null || typeof value !== 'object') return value;
+
+  const redacted = {};
+  for (const [key, item] of Object.entries(value)) {
+    redacted[key] = SECRET_DETAIL_KEY.test(key) ? '[скрыто]' : redactSecretDetails(item, depth + 1);
+  }
+  return redacted;
+}
+
+/** A details block that renders as an em dash instead of `{}` when empty. */
+function detailsJsonOrNull(details) {
+  const redacted = redactSecretDetails(details ?? {});
+  if (redacted && typeof redacted === 'object' && Object.keys(redacted).length === 0) return null;
+  return JSON.stringify(redacted, null, 2);
+}
+
 /** `GET /admin/audit` — filtered, paginated security log. */
 export async function showAudit(req, res, next) {
   try {
@@ -267,8 +306,15 @@ export async function showAudit(req, res, next) {
       ...entry,
       // Pretty JSON is prepared here so the template stays a renderer; `<%= %>`
       // escapes the result, which also neutralises HTML inside details.
-      detailsJson: JSON.stringify(entry.details ?? {}, null, 2),
+      detailsJson: detailsJsonOrNull(entry.details),
     }));
+
+    // An inverted range is a typo, not "no records": the page says so instead of
+    // showing an empty table that looks like a clean log.
+    const dateRangeMessage =
+      filters.from && filters.to && filters.from > filters.to
+        ? 'Дата «с» позже даты «по» — записей в таком диапазоне быть не может.'
+        : null;
 
     res.render('pages/admin/audit', {
       title: 'Аудит — Motherload',
@@ -278,6 +324,94 @@ export async function showAudit(req, res, next) {
       page: result.page,
       totalPages: result.totalPages,
       total: result.total,
+      dateRangeMessage,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Age of a backup in words: `только что`, `2 часа назад`, `3 дня назад`.
+ * Abbreviations would be shorter but read as machine output on a screen that is
+ * meant to be understood by an administrator.
+ */
+function formatAge(modifiedAt, now = new Date()) {
+  const minutes = Math.floor((now.getTime() - modifiedAt.getTime()) / 60000);
+  if (minutes < 1) return 'только что';
+  if (minutes < 60) {
+    return `${minutes} ${plural(minutes, ['минуту', 'минуты', 'минут'])} назад`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours} ${plural(hours, ['час', 'часа', 'часов'])} назад`;
+  }
+
+  const days = Math.floor(hours / 24);
+  return `${days} ${plural(days, ['день', 'дня', 'дней'])} назад`;
+}
+
+/** Russian plural form for a count: `1 минуту`, `2 минуты`, `5 минут`. */
+function plural(count, [one, few, many]) {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
+  return many;
+}
+
+/** Every `*.dump` in the backups directory, newest first. */
+async function listBackupFiles(directory) {
+  const names = await readdir(directory);
+  const files = [];
+
+  for (const name of names) {
+    if (!name.endsWith('.dump')) continue;
+    const info = await stat(path.join(directory, name));
+    if (!info.isFile()) continue;
+    files.push({ name, sizeBytes: info.size, modifiedAt: info.mtime });
+  }
+
+  files.sort((left, right) => right.modifiedAt - left.modifiedAt);
+  return files;
+}
+
+/**
+ * `GET /admin/backups` — read-only view of the server-side dump directory.
+ *
+ * The directory is created when missing so the page is not an error on a fresh
+ * install; dumps are never served over HTTP, so there is deliberately no
+ * download link.
+ */
+export async function showBackups(req, res, next) {
+  try {
+    await mkdir(BACKUPS_DIR, { recursive: true });
+    const files = await listBackupFiles(BACKUPS_DIR);
+    const now = new Date();
+
+    const rows = files.map((file) => ({
+      name: file.name,
+      sizeLabel: formatFileSize(file.sizeBytes),
+      modifiedAt: file.modifiedAt,
+      ageLabel: formatAge(file.modifiedAt, now),
+    }));
+
+    const newest = files[0] ?? null;
+    const lastBackup = newest
+      ? {
+          name: newest.name,
+          modifiedAt: newest.modifiedAt,
+          ageLabel: formatAge(newest.modifiedAt, now),
+          expired: isBackupExpired(newest.modifiedAt, now),
+        }
+      : null;
+
+    res.render('pages/admin/backups', {
+      title: 'Резервные копии — Motherload',
+      files: rows,
+      lastBackup,
+      retentionDays: BACKUP_RETENTION_DAYS,
     });
   } catch (error) {
     next(error);
