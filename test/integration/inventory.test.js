@@ -198,6 +198,34 @@ test('submit rejects unfilled lines and accepts a fully filled count', async () 
   assert.equal(audit[0].entity_id, String(countId));
 });
 
+test('submit names a few missing SKUs and reports the full list in details', async () => {
+  const ctx = await seedInventory();
+  await receive(ctx, 1);
+
+  for (let index = 1; index <= 5; index += 1) {
+    const extra = await addComponent(ctx, {
+      sku: `SKU-EXTRA-${index}`,
+      name: `Дополнительная позиция ${index}`,
+    });
+    await receive(ctx, 1, '10.0000', extra.id);
+  }
+
+  const { countId, lineCount } = await create(ctx);
+  assert.equal(lineCount, 6);
+
+  await assert.rejects(
+    () => submitCount({ countId, userId: ctx.userId }),
+    (error) => {
+      assert.equal(error.status, 400);
+      // The sixth missing SKU is truncated from the message but kept in details.
+      assert.match(error.message, /и ещё 1\./);
+      assert.equal(error.message.includes('SKU-EXTRA-5'), false);
+      assert.equal(error.details.unfilled.length, 6);
+      return true;
+    },
+  );
+});
+
 test('saveCountLines writes actual and difference atomically and clears them together', async () => {
   const ctx = await seedInventory();
   await receive(ctx, 5);
@@ -212,6 +240,25 @@ test('saveCountLines writes actual and difference atomically and clears them tog
   assert.equal(line.actual_qty, 8);
   assert.equal(line.difference, 3);
   assert.equal(line.comment, 'Нашлась коробка');
+
+  // A partial save omits the comment: the note must survive. Only an explicit
+  // null clears it.
+  await saveCountLines({
+    countId,
+    lines: [{ componentId: ctx.componentId, actualQty: 9 }],
+    userId: ctx.userId,
+  });
+  [line] = await lines(countId);
+  assert.equal(line.actual_qty, 9);
+  assert.equal(line.comment, 'Нашлась коробка');
+
+  await saveCountLines({
+    countId,
+    lines: [{ componentId: ctx.componentId, actualQty: 9, comment: null }],
+    userId: ctx.userId,
+  });
+  [line] = await lines(countId);
+  assert.equal(line.comment, null);
 
   // An empty field means "not entered", not zero: both columns must go back to
   // NULL together, otherwise submission would silently accept a zero count.
@@ -290,8 +337,10 @@ test('approval applies positive and negative differences in one transaction', as
 
   assert.equal(result.status, 'approved');
   assert.equal(result.adjustedLines, 2);
-  // 2 extra x 100 BYN plus 3 missing x 50 BYN.
-  assert.equal(result.totalAdjustment, '350.00');
+  // 2 extra x 100 BYN (surplus) minus 3 missing x 50 BYN (shortage) = net +50.
+  assert.equal(result.surplus, '200.00');
+  assert.equal(result.shortage, '150.00');
+  assert.equal(result.totalAdjustment, '50.00');
   assert.equal(await countStatus(countId), 'approved');
   assert.equal(await balance(ctx.componentId, ctx.warehouseId), 12);
   assert.equal(await balance(other.id, ctx.warehouseId), 7);
@@ -338,7 +387,9 @@ test('approval applies positive and negative differences in one transaction', as
   assert.equal(audit.length, 1);
   assert.equal(audit[0].user_id, ctx.admin.id);
   assert.equal(audit[0].details.adjustedLines, 2);
-  assert.equal(audit[0].details.totalAdjustment, '350.00');
+  assert.equal(audit[0].details.surplus, '200.00');
+  assert.equal(audit[0].details.shortage, '150.00');
+  assert.equal(audit[0].details.net, '50.00');
 });
 
 test('approval aborts when the ledger changed after the snapshot', async () => {
@@ -410,6 +461,124 @@ test('approval rolls back every adjustment when one line cannot be consumed', as
   assert.equal(await balance(ctx.componentId, ctx.warehouseId), 10);
   assert.equal(await balance(other.id, ctx.warehouseId), 5);
   assert.equal((await countAudit('inventory.approve')).length, 0);
+});
+
+test('negative adjustment records FIFO provenance on the inventory line', async () => {
+  const ctx = await seedInventory();
+  await receive(ctx, 3, '100.0000');
+  await receive(ctx, 2, '150.0000');
+
+  const { countId } = await create(ctx);
+  await saveCountLines({
+    countId,
+    lines: [{ componentId: ctx.componentId, actualQty: 1 }],
+    userId: ctx.userId,
+  });
+  await submitCount({ countId, userId: ctx.userId });
+
+  const result = await approveCount({ countId, user: ctx.admin });
+
+  // 3 x 100 plus 1 x 150: the shortage is signed, the net is negative.
+  assert.equal(result.shortage, '450.00');
+  assert.equal(result.totalAdjustment, '-450.00');
+
+  const [line] = await lines(countId);
+  const { rows: consumptions } = await query(
+    `select inventory_line_id, line_id, batch_id, qty, unit_cost
+     from batch_consumptions order by id`,
+  );
+  assert.equal(consumptions.length, 2);
+  for (const consumption of consumptions) {
+    // `inventory_line_id` is bigint (spec 7.2), which node-postgres returns as
+    // a string, unlike the integer `inventory_lines.id`.
+    assert.equal(consumption.inventory_line_id, String(line.id));
+    assert.equal(consumption.line_id, null);
+    assert.ok(consumption.batch_id !== null);
+  }
+  assert.deepEqual(
+    consumptions.map((consumption) => [consumption.qty, consumption.unit_cost]),
+    [
+      [3, '100.0000'],
+      [1, '150.0000'],
+    ],
+  );
+
+  const { rows: orphans } = await query(
+    `select count(*)::integer as count from batch_consumptions
+     where line_id is null and inventory_line_id is null`,
+  );
+  assert.equal(orphans[0].count, 0);
+  const { rows: total } = await query('select count(*)::integer as count from batch_consumptions');
+  assert.equal(total[0].count, 2);
+});
+
+test('positive adjustment values the new batch at the weighted average cost', async () => {
+  const ctx = await seedInventory();
+  await receive(ctx, 3, '100.0000');
+  await receive(ctx, 2, '200.0000');
+
+  const { countId } = await create(ctx);
+  await saveCountLines({
+    countId,
+    lines: [{ componentId: ctx.componentId, actualQty: 7 }],
+    userId: ctx.userId,
+  });
+  await submitCount({ countId, userId: ctx.userId });
+
+  const result = await approveCount({ countId, user: ctx.admin });
+
+  // (3 x 100 + 2 x 200) / 5 = 140 BYN per unit; 2 surplus units = 280 BYN.
+  assert.equal(result.surplus, '280.00');
+  assert.equal(result.totalAdjustment, '280.00');
+
+  const { rows: batches } = await query(
+    'select unit_cost, qty_received, qty_remaining from stock_batches where component_id = $1 order by id',
+    [ctx.componentId],
+  );
+  assert.equal(batches.length, 3);
+  assert.equal(batches[2].unit_cost, '140.0000');
+  assert.equal(batches[2].qty_received, 2);
+  assert.equal(batches[2].qty_remaining, 2);
+
+  const { rows: movements } = await query(
+    `select qty_delta, unit_cost from stock_movements
+     where component_id = $1 and qty_delta = 2 and unit_cost = '140.0000'`,
+    [ctx.componentId],
+  );
+  assert.equal(movements.length, 1);
+  assert.equal(movements[0].unit_cost, '140.0000');
+});
+
+test('approval reads the actor role from the database', async () => {
+  const ctx = await seedInventory();
+  await receive(ctx, 5);
+  const { countId } = await create(ctx);
+  await saveCountLines({
+    countId,
+    lines: [{ componentId: ctx.componentId, actualQty: 5 }],
+    userId: ctx.userId,
+  });
+  await submitCount({ countId, userId: ctx.userId });
+
+  await assert.rejects(
+    () => approveCount({ countId, userId: ctx.storekeeper.id }),
+    expectStatus(403),
+  );
+  // A user object without a role is not "unknown, therefore allowed".
+  await assert.rejects(
+    () => approveCount({ countId, user: { id: ctx.storekeeper.id } }),
+    expectStatus(403),
+  );
+  // A stale caller claim must not override the stored role.
+  await assert.rejects(
+    () => approveCount({ countId, user: { id: ctx.storekeeper.id, role: 'admin' } }),
+    expectStatus(403),
+  );
+  await assert.rejects(() => approveCount({ countId }), expectStatus(403));
+  assert.equal(await countStatus(countId), 'submitted');
+
+  await approveCount({ countId, userId: ctx.admin.id });
+  assert.equal(await countStatus(countId), 'approved');
 });
 
 test('approval requires a submitted count and an admin actor', async () => {

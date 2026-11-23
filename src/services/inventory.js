@@ -1,9 +1,11 @@
+import { env } from '../config/env.js';
 import { withTransaction } from '../db/pool.js';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../domain/errors.js';
 import { allocateFifo } from '../domain/fifo.js';
 import { d } from '../domain/money.js';
 import * as inventory from '../repositories/inventory.js';
 import * as stock from '../repositories/stock.js';
+import * as users from '../repositories/users.js';
 import * as audit from './audit.js';
 
 // Mirrors the `integer` quantity columns and the bounds used by the stock
@@ -105,7 +107,11 @@ function readActualQty(value, position) {
 /**
  * Validate and de-duplicate the editable lines of a draft count.
  * @param {unknown} lines
- * @returns {Array<{ componentId: number, actualQty: number | null, comment: string | null }>}
+ * @returns {Array<{
+ *   componentId: number,
+ *   actualQty: number | null,
+ *   comment: string | null | undefined,
+ * }>} an omitted comment stays `undefined` so a partial save does not wipe it
  */
 function prepareLines(lines) {
   if (!Array.isArray(lines) || lines.length === 0) {
@@ -128,7 +134,7 @@ function prepareLines(lines) {
     prepared.push({
       componentId,
       actualQty: readActualQty(line?.actualQty, index + 1),
-      comment: readComment(line?.comment),
+      comment: line?.comment === undefined ? undefined : readComment(line.comment),
     });
   }
 
@@ -213,6 +219,8 @@ export async function createCount({
     const lineCount = await inventory.snapshotLines(client, {
       countId: created.id,
       warehouseId: warehouse,
+      // Demo mode pins the window to the reference date; production uses today.
+      asOf: env.analyticsReferenceDate ?? todayInMinsk(),
     });
 
     await audit.record(
@@ -273,7 +281,10 @@ export async function saveCountLines({ countId, lines, user = null, userId = nul
         countId: id,
         componentId: line.componentId,
         actualQty: line.actualQty,
-        comment: line.comment,
+        comment: line.comment ?? null,
+        // An omitted comment means "leave the existing note alone"; an explicit
+        // null is how the form clears it.
+        touchComment: line.comment !== undefined,
       });
       // Membership was just checked under the count row lock; a missing row
       // would mean the count and its lines diverged in the database.
@@ -329,8 +340,15 @@ export async function submitCount({ countId, user = null, userId = null, req }) 
 
     const unfilled = await inventory.findUnfilledLines(client, id);
     if (unfilled.length > 0) {
-      const skus = unfilled.map((line) => line.sku).join(', ');
-      throw new ValidationError(`Заполните фактическое количество: ${skus}.`, {
+      // The message names a few rows; the full list travels in details so the
+      // screen can mark every missing field without a wall of text.
+      const shown = unfilled
+        .slice(0, 5)
+        .map((line) => line.sku)
+        .join(', ');
+      const remaining = unfilled.length - 5;
+      const suffix = remaining > 0 ? ` и ещё ${remaining}` : '';
+      throw new ValidationError(`Заполните фактическое количество: ${shown}${suffix}.`, {
         details: { unfilled },
       });
     }
@@ -367,20 +385,29 @@ export async function submitCount({ countId, user = null, userId = null, req }) 
  * untouched.
  *
  * Positive differences create a batch valued at the snapshot's weighted average
- * cost. Negative differences consume batches FIFO. `batch_consumptions` is not
- * written for these movements: its `line_id` is a NOT NULL reference to a stock
- * document line, and inventory adjustments deliberately have no stock document.
- * The consumed batches are recorded by `stock_movements` and the decremented
- * `stock_batches` rows; the count itself is the audit trail.
+ * cost. Negative differences consume batches FIFO and record one
+ * `batch_consumptions` row per consumed batch against the inventory line, so an
+ * adjustment keeps the same provenance as an issue even though it has no stock
+ * document.
+ *
+ * `totalAdjustment` is the signed net (`surplus - shortage`); the audit entry
+ * keeps both sides separately as well.
  *
  * @param {{
  *   countId: number,
  *   user?: { id?: number, role?: string } | null,
  *   userId?: number | null,
  *   req?: import('express').Request,
- * }} input `user` carries the role when the service is called from a route
- * @returns {Promise<{ countId: number, status: 'approved', adjustedLines: number, totalAdjustment: string }>}
- * @throws {ForbiddenError} when `user` is present and is not an admin
+ * }} input `user` carries the actor when the service is called from a route
+ * @returns {Promise<{
+ *   countId: number,
+ *   status: 'approved',
+ *   adjustedLines: number,
+ *   surplus: string,
+ *   shortage: string,
+ *   totalAdjustment: string,
+ * }>} money values are two-decimal strings
+ * @throws {ForbiddenError} when the actor is missing or is not an admin in the database
  * @throws {NotFoundError} when the count or its warehouse does not exist
  * @throws {ConflictError} on a non-submitted count, a repeated approval or ledger drift
  */
@@ -388,13 +415,14 @@ export async function approveCount({ countId, user = null, userId = null, req })
   const id = readCountId(countId);
   const actor = resolveActor({ user, userId });
 
-  // Role enforcement lives here as well as on the route: a service call from a
-  // script must not be able to bypass the rule the screen enforces.
-  if (actor.role !== null && actor.role !== 'admin') {
-    throw new ForbiddenError('Утверждать инвентаризацию может только администратор.');
-  }
-
   return withTransaction(async (client) => {
+    // The role is read from the database, not trusted from the caller: a route
+    // could pass a stale session object, and a script could pass any role.
+    const actorRow = actor.id === null ? null : await users.findById(actor.id, { client });
+    if (actorRow?.role !== 'admin') {
+      throw new ForbiddenError('Утверждать инвентаризацию может только администратор.');
+    }
+
     const count = await inventory.findCountById(client, id);
     if (!count) throw new NotFoundError('Инвентаризация не найдена.');
 
@@ -420,7 +448,8 @@ export async function approveCount({ countId, user = null, userId = null, req })
     }
 
     let adjustedLines = 0;
-    let totalAdjustment = d(0);
+    let surplus = d(0);
+    let shortage = d(0);
 
     for (const line of lines) {
       // Submission guarantees a number; a NULL here means the rows were changed
@@ -433,13 +462,9 @@ export async function approveCount({ countId, user = null, userId = null, req })
       adjustedLines += 1;
 
       if (line.difference > 0) {
-        totalAdjustment = totalAdjustment.plus(
-          await applyIncrease(client, line, count.warehouseId),
-        );
+        surplus = surplus.plus(await applyIncrease(client, line, count.warehouseId));
       } else {
-        totalAdjustment = totalAdjustment.plus(
-          await applyDecrease(client, line, count.warehouseId),
-        );
+        shortage = shortage.plus(await applyDecrease(client, line, count.warehouseId));
       }
     }
 
@@ -449,7 +474,10 @@ export async function approveCount({ countId, user = null, userId = null, req })
     });
     if (!approved) throw new ConflictError('Инвентаризация уже утверждена.');
 
-    const total = totalAdjustment.toFixed(2);
+    // Signed net: a shortage reduces the stock value, a surplus increases it.
+    const surplusText = surplus.toFixed(2);
+    const shortageText = shortage.toFixed(2);
+    const net = surplus.minus(shortage).toFixed(2);
 
     await audit.record(
       {
@@ -457,13 +485,26 @@ export async function approveCount({ countId, user = null, userId = null, req })
         action: 'inventory.approve',
         entityType: 'inventory_count',
         entityId: id,
-        details: { lines: lines.length, adjustedLines, totalAdjustment: total },
+        details: {
+          lines: lines.length,
+          adjustedLines,
+          surplus: surplusText,
+          shortage: shortageText,
+          net,
+        },
         req,
       },
       { client },
     );
 
-    return { countId: id, status: 'approved', adjustedLines, totalAdjustment: total };
+    return {
+      countId: id,
+      status: 'approved',
+      adjustedLines,
+      surplus: surplusText,
+      shortage: shortageText,
+      totalAdjustment: net,
+    };
   });
 }
 
@@ -522,10 +563,12 @@ async function applyIncrease(client, line, warehouseId) {
 }
 
 /**
- * Consume the shortage FIFO, decrement the batches and write one negative
- * movement per consumed batch, mirroring an issue posting.
+ * Consume the shortage FIFO, record each consumed batch against the inventory
+ * line, decrement the batches and write one negative movement per consumed
+ * batch, mirroring an issue posting.
  * @param {import('pg').PoolClient} client
- * @param {{ componentId: number, difference: number }} line difference is negative
+ * @param {{ id: number, componentId: number, difference: number }} line
+ *   `id` is the inventory line that owns the consumption; difference is negative
  * @param {number} warehouseId
  * @returns {Promise<string>} four-decimal cost of the consumed batches
  */
@@ -535,6 +578,15 @@ async function applyDecrease(client, line, warehouseId) {
   const allocation = allocateFifo(batches, deficit);
 
   for (const consumed of allocation.allocations) {
+    // Inventory adjustments have no stock document, so provenance points at the
+    // inventory line. The database check allows exactly one source per row.
+    await stock.insertBatchConsumption(client, {
+      inventoryLineId: line.id,
+      batchId: consumed.batchId,
+      qty: consumed.qty,
+      unitCost: consumed.unitCost,
+    });
+
     await stock.decrementBatchRemaining(client, {
       batchId: consumed.batchId,
       qty: consumed.qty,
@@ -572,10 +624,19 @@ export async function cancelCount({ countId, user = null, userId = null, req }) 
   const actor = resolveActor({ user, userId });
 
   return withTransaction(async (client) => {
-    const count = await inventory.findCountById(client, id, { forUpdate: true });
+    const count = await inventory.findCountById(client, id);
     if (!count) throw new NotFoundError('Инвентаризация не найдена.');
 
-    if (count.status !== 'draft' && count.status !== 'submitted') {
+    // Same lock order as approval: warehouse first, then the count. Cancelling
+    // does not touch stock, but taking the warehouse lock keeps every status
+    // change of an active count serialised with postings and with approval.
+    const warehouse = await stock.lockWarehouse(client, count.warehouseId);
+    if (!warehouse) throw new NotFoundError('Склад не найден.');
+
+    const locked = await inventory.findCountById(client, id, { forUpdate: true });
+    if (!locked) throw new NotFoundError('Инвентаризация не найдена.');
+
+    if (locked.status !== 'draft' && locked.status !== 'submitted') {
       throw new ConflictError('Завершённую инвентаризацию нельзя отменить.');
     }
 
@@ -588,7 +649,7 @@ export async function cancelCount({ countId, user = null, userId = null, req }) 
         action: 'inventory.cancel',
         entityType: 'inventory_count',
         entityId: id,
-        details: { previousStatus: count.status },
+        details: { previousStatus: locked.status },
         req,
       },
       { client },

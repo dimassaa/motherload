@@ -52,16 +52,19 @@ export async function insertCount(client, { warehouseId, comment = null, userId 
  * used later to value a positive adjustment.
  *
  * @param {import('pg').PoolClient} client
- * @param {{ countId: number, warehouseId: number, windowDays?: number }} input
+ * @param {{ countId: number, warehouseId: number, asOf: string, windowDays?: number }} input
+ *   `asOf` is the ISO date the activity window ends at
  * @returns {Promise<number>} number of inserted lines
  */
 export async function snapshotLines(
   client,
-  { countId, warehouseId, windowDays = ACTIVITY_WINDOW_DAYS },
+  { countId, warehouseId, asOf, windowDays = ACTIVITY_WINDOW_DAYS },
 ) {
   // The movement window uses `stock_movements.created_at`, the actual posting
   // time. Document dates are backdatable; the freeze and the snapshot concern
-  // what physically happened, not the paper date.
+  // what physically happened, not the paper date. The window ends at the
+  // analytics reference date in demo mode so a fixed dataset keeps the same
+  // snapshot lines regardless of when it is inspected.
   const result = await client.query(
     `insert into inventory_lines (count_id, component_id, expected_qty, unit_cost)
      select $1, c.id, coalesce(b.qty, 0), coalesce(v.avg_cost, c.purchase_price)
@@ -77,11 +80,12 @@ export async function snapshotLines(
            select 1 from stock_movements m
            where m.component_id = c.id
              and m.warehouse_id = $2
-             and m.created_at >= now() - make_interval(days => $3)
+             and m.created_at >=
+               (($4::date - make_interval(days => $3))::timestamp at time zone 'Europe/Minsk')
          )
        )
      order by c.sku`,
-    [countId, warehouseId, windowDays],
+    [countId, warehouseId, windowDays, asOf],
   );
 
   return result.rowCount;
@@ -230,22 +234,32 @@ export async function findUnfilledLines(client, countId) {
  * columns to move together, so deriving `difference` here (rather than in a
  * second UPDATE) is what makes the pair atomic.
  *
+ * A comment that is `undefined` in the request is left untouched; pass `null`
+ * explicitly to clear it. This lets a partial save update quantities without
+ * erasing notes the operator wrote earlier.
+ *
  * @param {import('pg').PoolClient} client
- * @param {{ countId: number, componentId: number, actualQty: number | null, comment: string | null }} input
+ * @param {{
+ *   countId: number,
+ *   componentId: number,
+ *   actualQty: number | null,
+ *   comment?: string | null,
+ *   touchComment?: boolean,
+ * }} input
  * @returns {Promise<{ id: number } | null>} null when the component is not part of the count
  */
 export async function updateLineActual(
   client,
-  { countId, componentId, actualQty, comment = null },
+  { countId, componentId, actualQty, comment = null, touchComment = true },
 ) {
   const { rows } = await client.query(
     `update inventory_lines
      set actual_qty = $3::integer,
          difference = case when $3::integer is null then null else $3::integer - expected_qty end,
-         comment = $4
+         comment = case when $5::boolean then $4::text else comment end
      where count_id = $1 and component_id = $2
      returning id`,
-    [countId, componentId, actualQty, comment],
+    [countId, componentId, actualQty, comment, touchComment],
   );
 
   return rows[0] ? { id: rows[0].id } : null;
