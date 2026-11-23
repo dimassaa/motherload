@@ -3,6 +3,21 @@ import { countOpen } from '../services/alerts.js';
 import * as helpers from '../views/helpers.js';
 
 /**
+ * Default metadata for every page. Private screens must never be indexed, so
+ * `noindex` is the default; the public landing overrides the whole object with
+ * its canonical URL, description and social preview.
+ */
+const PRIVATE_PAGE_META = Object.freeze({
+  title: null,
+  description: null,
+  canonicalUrl: null,
+  ogImageUrl: null,
+  openGraph: false,
+  jsonLd: null,
+  noindex: true,
+});
+
+/**
  * Attach the small set of values every EJS template may rely on.
  *
  * `req.user` is populated by the auth middleware; guests get the public chrome
@@ -17,6 +32,7 @@ export async function attachLocals(req, res, next) {
   res.locals.currentUser = req.user ?? null;
   res.locals.currentPath = req.path;
   res.locals.openAlertsCount = res.locals.openAlertsCount ?? 0;
+  res.locals.pageMeta = { ...PRIVATE_PAGE_META };
 
   res.locals.formatMoney = helpers.formatMoney;
   res.locals.formatQty = helpers.formatQty;

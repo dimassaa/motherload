@@ -3,8 +3,7 @@
  *
  * Kept as a separate script instead of a postinstall step: sharp is a dev
  * dependency, pruned from the runtime image, and the PNG is generated once per
- * asset change. The SVG source is not committed yet; missing SEO assets are an
- * open item in IMPROVEMENTS.md.
+ * asset change. Both the SVG source and the generated PNG are committed.
  */
 import { access, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -19,9 +18,7 @@ async function main() {
   try {
     await access(sourcePath);
   } catch {
-    throw new Error(
-      'og-cover.svg missing — expected public/img/og-cover.svg (open item in IMPROVEMENTS.md)',
-    );
+    throw new Error('og-cover.svg missing — expected the committed public/img/og-cover.svg');
   }
 
   await mkdir(path.dirname(targetPath), { recursive: true });

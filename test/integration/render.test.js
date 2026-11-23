@@ -69,7 +69,8 @@ test('GET / keeps public pages indexable and sends no inline scripts', async () 
   const res = await request(createApp()).get('/');
 
   assert.doesNotMatch(res.text, /noindex/);
-  assert.doesNotMatch(res.text, /<script(?![^>]*\bsrc=)/);
+  // JSON-LD is an inert data block, not an executable inline script.
+  assert.doesNotMatch(res.text, /<script(?![^>]*(?:\bsrc=|application\/ld\+json))/);
 });
 
 test('app layout renders role-aware links and logout inside the no-JS burger', async () => {

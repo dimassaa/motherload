@@ -9,6 +9,7 @@ import * as componentsController from '../controllers/components.js';
 import * as dashboardController from '../controllers/dashboard.js';
 import * as inventoryController from '../controllers/inventory.js';
 import * as profileController from '../controllers/profile.js';
+import * as publicController from '../controllers/public.js';
 import * as reportsController from '../controllers/reports.js';
 import * as stockController from '../controllers/stock.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
@@ -33,6 +34,11 @@ export function createWebRouter({ loginLimiter }) {
       db: up ? 'up' : 'down',
     });
   });
+
+  // Crawler files are mounted before CSRF: generating a token would create a
+  // session row for every anonymous bot request.
+  router.get('/robots.txt', publicController.showRobots);
+  router.get('/sitemap.xml', publicController.showSitemap);
 
   router.use(csrfProtection);
 

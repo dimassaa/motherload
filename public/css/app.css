@@ -1178,6 +1178,44 @@ a.app-header__identity:hover {
   color: var(--color-text-muted);
 }
 
+/* ---------------------------------------------------------------- Error page */
+
+.error-page {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-16);
+  max-width: 720px;
+  padding: var(--space-48) 0;
+}
+
+.error-page .axis-label {
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.error-page__title {
+  font-size: var(--text-heading);
+}
+
+.error-page__text {
+  max-width: 60ch;
+  color: var(--color-charcoal-bark);
+}
+
+.error-page__detail {
+  max-width: 60ch;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-body);
+}
+
+@media (max-width: 767px) {
+  .error-page {
+    padding: var(--space-32) 0;
+  }
+}
+
 /* ------------------------------------------------------------------ Landing */
 
 .landing {
@@ -1240,6 +1278,57 @@ a.app-header__identity:hover {
   content: '— ';
   color: var(--color-deep-fern);
   font-family: var(--font-mono);
+}
+
+.landing__scatter-figure {
+  margin: 0 0 var(--space-24);
+  padding: var(--space-16);
+  border: 1px solid var(--color-lichen);
+  border-radius: var(--radius-card);
+  background: rgb(255 255 255 / 45%);
+}
+
+.landing__scatter {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.landing__scatter-grid line {
+  stroke: var(--color-lichen);
+  stroke-width: 1;
+}
+
+.landing__scatter-axis {
+  stroke: var(--color-slate-smoke);
+  stroke-width: 1.5;
+}
+
+.landing__scatter-points circle {
+  fill: var(--color-moss);
+}
+
+.landing__scatter-point--focus {
+  fill: var(--color-deep-fern);
+}
+
+.landing__about {
+  margin-top: var(--space-24);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--color-lichen);
+}
+
+.landing__about summary {
+  display: inline-block;
+  color: var(--color-deep-fern);
+  cursor: pointer;
+}
+
+.landing__about-text {
+  max-width: 60ch;
+  margin-top: var(--space-8);
+  color: var(--color-text-muted);
+  font-size: var(--text-body);
 }
 
 .landing__auth {
