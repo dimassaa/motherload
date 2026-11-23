@@ -485,7 +485,7 @@ CREATE TYPE alert_severity AS ENUM ('critical', 'warning', 'info');
 `id identity PK`, `document_id FK ON DELETE CASCADE`, `component_id FK`, `qty integer NOT NULL CHECK (qty > 0)`, `unit_cost numeric(14,4) CHECK (unit_cost >= 0)`, `total_cost numeric(14,2) NOT NULL DEFAULT 0`, `comment text`.
 
 **batch_consumptions**
-`id identity PK`, `line_id FK ON DELETE CASCADE`, `batch_id FK`, `qty integer NOT NULL CHECK (qty > 0)`, `unit_cost numeric(14,4) NOT NULL`.
+`id identity PK`, `line_id FK stock_document_lines NULL ON DELETE CASCADE`, `inventory_line_id FK inventory_lines NULL ON DELETE CASCADE`, `batch_id FK`, `qty integer NOT NULL CHECK (qty > 0)`, `unit_cost numeric(14,4) NOT NULL`. Ровно один источник: `CHECK ((line_id IS NOT NULL) <> (inventory_line_id IS NOT NULL))`. Это позволяет фиксировать FIFO-провенанс и для отрицательной корректировки инвентаризации, у которой нет складского документа.
 
 **stock_movements**
 `id identity PK`, `component_id FK`, `warehouse_id FK`, `qty_delta integer NOT NULL CHECK (qty_delta <> 0)`, `unit_cost numeric(14,4) NOT NULL`, `document_id FK NULL`, `line_id FK NULL`, `created_at timestamptz NOT NULL DEFAULT now()`.
@@ -512,6 +512,7 @@ CREATE TYPE alert_severity AS ENUM ('critical', 'warning', 'info');
 - `stock_movements (component_id, warehouse_id, created_at DESC)`
 - `stock_movements (document_id)`
 - `stock_batches (component_id, warehouse_id, received_at, id) WHERE qty_remaining > 0`
+- `batch_consumptions (line_id)` и `batch_consumptions (inventory_line_id)`
 - `components (category_id)`, `components (is_active)`, `components (name)`
 - `alerts (status, type)`, `alerts (component_id)`
 - `audit_log (created_at DESC)`, `audit_log (user_id)`

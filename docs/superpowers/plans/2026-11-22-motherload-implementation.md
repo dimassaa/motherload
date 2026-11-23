@@ -1004,7 +1004,9 @@ Expected: FAIL.
 
 - [ ] **Step 4: Implement approval adjustments**
 
-`approveCount` admin-only: lock count; require `submitted`; re-check current balance equals expected for every line; for each difference, positive → create batch at weighted average cost (or last purchase price) and `+` movement; negative → FIFO consume and `-` movement; status `approved`; audit with counts and total adjustment. All in one transaction. `cancelCount` releases freeze.
+Add migration `002_inventory_consumptions.sql` (do not edit an applied `001_init.sql`): make `batch_consumptions.line_id` nullable, add `inventory_line_id FK inventory_lines ON DELETE CASCADE`, add `CHECK ((line_id IS NOT NULL) <> (inventory_line_id IS NOT NULL))`, and indexes on both columns. This is required so a negative inventory adjustment can record which FIFO batch it consumed; without it the batch provenance is lost.
+
+`approveCount` admin-only: lock count; require `submitted`; re-check current balance equals expected for every line; for each difference, positive → create batch at weighted average cost (or last purchase price) and `+` movement; negative → FIFO consume, insert `batch_consumptions` with `inventory_line_id`, and `-` movement; status `approved`; audit with counts and total adjustment. All in one transaction. `cancelCount` releases freeze.
 
 - [ ] **Step 5: Run tests, lint, format; commit**
 
