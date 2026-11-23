@@ -33,7 +33,9 @@ services:
       # empty. A production install sets SEED_DEMO=false and leaves the
       # analytics reference date empty, so "today" is the real Minsk day.
       SEED_DEMO: ${SEED_DEMO:-true}
-      ANALYTICS_REFERENCE_DATE: ${ANALYTICS_REFERENCE_DATE:-2026-11-22}
+      # Single-dash expansion: an explicitly empty value stays empty (production
+      # uses the real Minsk day); only an unset variable gets the demo default.
+      ANALYTICS_REFERENCE_DATE: ${ANALYTICS_REFERENCE_DATE-2026-11-22}
       # The session secret must come from .env; silently inventing one would
       # invalidate every login on each container recreation.
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set in .env (at least 32 characters)}

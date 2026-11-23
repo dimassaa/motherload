@@ -18,7 +18,14 @@ import { logger } from '../src/lib/logger.js';
  * data. `ANALYTICS_REFERENCE_DATE` (or the current Minsk day) decides the
  * history window.
  * @param {{ referenceDate?: string }} [options]
- * @returns {Promise<ReturnType<typeof seed>>}
+ * @returns {Promise<{
+ *   skipped: boolean,
+ *   referenceDate: string,
+ *   counts: Record<string, number>,
+ *   documents?: { receipts: number, issues: number, total: number },
+ *   alerts?: { created: number, resolved: number },
+ *   migrations: { applied: number, known: number },
+ * }>} the seed result plus the migration counters
  * @throws {Error} in production, where a reset would destroy real inventory
  */
 export async function resetDatabase({ referenceDate } = {}) {

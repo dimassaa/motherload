@@ -338,3 +338,15 @@ container on a user-defined network with the same environment variables the
 compose file passes. Compose YAML itself was parsed, but `docker compose up`
 was not executed. Run the documented one-command path once on a machine with the
 compose plugin installed before shipping.
+
+## 2026-11-23, Task 23 fix — XYZ classes are now deliberately varied
+
+The all-Z finding above is resolved in the fix pass. The history generator now
+assigns deterministic demand profiles: a third of the catalogue issues an equal
+quantity every month (X), a third follows a mild seasonal pattern (Y), and the
+remainder are spiky or dead (Z). The opening receipt moves to April so the full
+May–October XYZ window is covered. Current demo counts are X 20 / Y 18 / Z 22 and
+eight of the nine ABC×XYZ cells are populated; the seed test asserts all three
+classes and at least three non-empty matrix cells. The original entry stays here because the
+underlying rule conflict (six-month XYZ window versus the earlier 150–170-day
+opening receipt) is worth remembering when the demo window changes again.

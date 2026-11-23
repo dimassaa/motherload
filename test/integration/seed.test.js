@@ -4,9 +4,10 @@ import { after, before, test } from 'node:test';
 // before `src/config/env.js` is evaluated by the imports below.
 import '../helpers/pin-analytics-date.js';
 import { resetDatabase } from '../../scripts/reset-db.js';
+import { APPLICATION_TABLES } from '../../src/db/application-tables.js';
 import { query } from '../../src/db/pool.js';
 import { seed } from '../../src/db/seed.js';
-import { getAbc, getDashboard } from '../../src/services/analytics.js';
+import { getAbc, getDashboard, getXyz } from '../../src/services/analytics.js';
 import { login } from '../../src/services/auth.js';
 import { setupTestDb, teardownTestDb, truncateAll } from '../helpers/db.js';
 
@@ -99,6 +100,24 @@ test('demo data produces low-stock, dead-stock and overstock cases', async () =>
   assert.ok((byType.overstock ?? 0) > 0, 'recalculation must open overstock alerts');
 });
 
+test('demo demand spans XYZ classes X, Y and Z', async () => {
+  const xyz = await getXyz({});
+  const byClass = { X: 0, Y: 0, Z: 0 };
+
+  for (const row of xyz.rows) {
+    byClass[row.class] += 1;
+  }
+
+  assert.ok(byClass.X > 0, 'steady demand must classify as X');
+  assert.ok(byClass.Y > 0, 'seasonal demand must classify as Y');
+  assert.ok(byClass.Z > 0, 'spiky and dead demand must classify as Z');
+
+  const filledCells = xyz.matrix.rows
+    .flatMap((matrixRow) => matrixRow.cells)
+    .filter((cell) => cell.count > 0);
+  assert.ok(filledCells.length >= 3, 'the ABC×XYZ matrix must not be a single column');
+});
+
 test('demo dashboard is populated instead of empty', async () => {
   const dashboard = await getDashboard();
 
@@ -118,6 +137,22 @@ test('ABC classification is stable across a forced reseed', async () => {
   assert.deepEqual(
     after.rows.map((row) => [row.sku, row.class]),
     before.rows.map((row) => [row.sku, row.class]),
+  );
+});
+
+test('reset truncates every application table the schema defines', async () => {
+  const { rows } = await query(
+    `select tablename
+     from pg_tables
+     where schemaname = 'public' and tablename <> 'schema_migrations'
+     order by tablename`,
+  );
+  const schemaTables = rows.map((row) => row.tablename).sort();
+
+  assert.deepEqual(
+    schemaTables,
+    [...APPLICATION_TABLES].sort(),
+    'a new table must be added to APPLICATION_TABLES, or a reset will leave stale rows',
   );
 });
 
