@@ -1,0 +1,243 @@
+<%
+  const hasFilters =
+    filters.q !== '' ||
+    filters.categoryId !== null ||
+    filters.manufacturerId !== null ||
+    filters.warehouseId !== null ||
+    filters.status !== 'all';
+
+  // Sort links keep every active filter except the page number: changing the
+  // order must return to the first page.
+  const sortHref = (key) =>
+    queryString('/components', {
+      q: filters.q,
+      categoryId: filters.categoryId,
+      manufacturerId: filters.manufacturerId,
+      warehouseId: filters.warehouseId,
+      status: filters.status,
+      sort: key,
+      dir: filters.sort === key && filters.dir === 'asc' ? 'desc' : 'asc',
+    });
+
+  const sortAttr = (key) =>
+    filters.sort === key
+      ? `aria-sort="${filters.dir === 'asc' ? 'ascending' : 'descending'}"`
+      : '';
+
+  const paginationParams = {
+    q: filters.q,
+    categoryId: filters.categoryId,
+    manufacturerId: filters.manufacturerId,
+    warehouseId: filters.warehouseId,
+    status: filters.status,
+    sort: filters.sort,
+    dir: filters.dir,
+  };
+%>
+<section aria-labelledby="catalog-title">
+  <div class="page-header">
+    <h1 id="catalog-title" class="page-header__title">Комплектующие</h1>
+    <% if (canManageCatalog) { %>
+      <a class="btn btn--primary" href="/admin/components/new">Добавить позицию</a>
+    <% } %>
+  </div>
+
+  <p class="page-header__meta">
+    Найдено: <%= total %>
+    <% if (pages > 1) { %>
+      · страница <%= page %> из <%= pages %>
+    <% } %>
+    <% if (selectedWarehouse) { %>
+      · склад: <%= selectedWarehouse.name %>
+    <% } %>
+  </p>
+
+  <form class="filter-bar" method="get" action="/components">
+    <input type="hidden" name="sort" value="<%= filters.sort %>">
+    <input type="hidden" name="dir" value="<%= filters.dir %>">
+
+    <div class="form-field">
+      <label class="form-field__label" for="catalog-q">Поиск</label>
+      <input
+        class="form-field__input"
+        id="catalog-q"
+        name="q"
+        type="search"
+        placeholder="Название или SKU"
+        value="<%= filters.q %>"
+      >
+    </div>
+
+    <div class="form-field">
+      <label class="form-field__label" for="catalog-category">Категория</label>
+      <select class="form-field__select" id="catalog-category" name="categoryId">
+        <option value="" <%- filters.categoryId === null ? 'selected' : '' %>>Все категории</option>
+        <% for (const category of options.categories) { %>
+          <option
+            value="<%= category.id %>"
+            <%- String(filters.categoryId ?? '') === String(category.id) ? 'selected' : '' %>
+          >
+            <%= category.name %>
+          </option>
+        <% } %>
+      </select>
+    </div>
+
+    <div class="form-field">
+      <label class="form-field__label" for="catalog-manufacturer">Производитель</label>
+      <select class="form-field__select" id="catalog-manufacturer" name="manufacturerId">
+        <option value="" <%- filters.manufacturerId === null ? 'selected' : '' %>>
+          Все производители
+        </option>
+        <% for (const manufacturer of options.manufacturers) { %>
+          <option
+            value="<%= manufacturer.id %>"
+            <%- String(filters.manufacturerId ?? '') === String(manufacturer.id) ? 'selected' : ''
+            %>
+          >
+            <%= manufacturer.name %>
+          </option>
+        <% } %>
+      </select>
+    </div>
+
+    <div class="form-field">
+      <label class="form-field__label" for="catalog-warehouse">Склад</label>
+      <select class="form-field__select" id="catalog-warehouse" name="warehouseId">
+        <option value="" <%- filters.warehouseId === null ? 'selected' : '' %>>Все склады</option>
+        <% for (const warehouse of options.warehouses) { %>
+          <option
+            value="<%= warehouse.id %>"
+            <%- String(filters.warehouseId ?? '') === String(warehouse.id) ? 'selected' : '' %>
+          >
+            <%= warehouse.name %> · <%= warehouse.city %>
+          </option>
+        <% } %>
+      </select>
+    </div>
+
+    <div class="form-field">
+      <label class="form-field__label" for="catalog-status">Остаток</label>
+      <select class="form-field__select" id="catalog-status" name="status">
+        <option value="all" <%- filters.status === 'all' ? 'selected' : '' %>>Все остатки</option>
+        <option value="zero" <%- filters.status === 'zero' ? 'selected' : '' %>>Нет остатка</option>
+        <option value="below_min" <%- filters.status === 'below_min' ? 'selected' : '' %>>
+          Ниже минимума
+        </option>
+        <option value="overstock" <%- filters.status === 'overstock' ? 'selected' : '' %>>
+          Избыток
+        </option>
+      </select>
+    </div>
+
+    <div class="filter-bar__actions">
+      <button class="btn btn--outline btn--sm" type="submit">Применить фильтры</button>
+      <a class="btn btn--ghost btn--sm" href="/components">Сбросить фильтры</a>
+    </div>
+  </form>
+
+  <% if (rows.length === 0) { %>
+    <% if (hasFilters) { %>
+      <%- include('../../partials/empty-state', {
+        title: 'Ничего не найдено',
+        text: 'По выбранным условиям позиций нет. Сбросьте фильтры или измените запрос.',
+        actionHref: '/components',
+        actionLabel: 'Сбросить фильтры',
+      }) %>
+    <% } else { %>
+      <%- include('../../partials/empty-state', {
+        title: 'Каталог пуст',
+        text: 'В каталоге пока нет активных позиций.',
+        actionHref: canManageCatalog ? '/admin/components/new' : null,
+        actionLabel: canManageCatalog ? 'Добавить позицию' : null,
+      }) %>
+    <% } %>
+  <% } else { %>
+    <div class="table-wrap">
+      <table class="table">
+        <thead class="table__head">
+          <tr>
+            <th class="table__heading" scope="col" <%- sortAttr('sku') %>>
+              <a class="sort-link" href="<%= sortHref('sku') %>">
+                SKU
+                <% if (filters.sort === 'sku') { %>
+                  <span aria-hidden="true"><%= filters.dir === 'asc' ? '↑' : '↓' %></span>
+                <% } %>
+              </a>
+            </th>
+            <th class="table__heading" scope="col" <%- sortAttr('name') %>>
+              <a class="sort-link" href="<%= sortHref('name') %>">
+                Название
+                <% if (filters.sort === 'name') { %>
+                  <span aria-hidden="true"><%= filters.dir === 'asc' ? '↑' : '↓' %></span>
+                <% } %>
+              </a>
+            </th>
+            <th class="table__heading" scope="col">Категория</th>
+            <th class="table__heading table__cell--num" scope="col" <%- sortAttr('qty') %>>
+              <a class="sort-link" href="<%= sortHref('qty') %>">
+                Остаток
+                <% if (filters.sort === 'qty') { %>
+                  <span aria-hidden="true"><%= filters.dir === 'asc' ? '↑' : '↓' %></span>
+                <% } %>
+              </a>
+            </th>
+            <th class="table__heading" scope="col">Ед.</th>
+            <th class="table__heading table__cell--num" scope="col">Мин.</th>
+            <th class="table__heading table__cell--num" scope="col">
+              <span title="Точка заказа появится вместе с аналитикой">ROP</span>
+            </th>
+            <th class="table__heading table__cell--num" scope="col" <%- sortAttr('value') %>>
+              <a class="sort-link" href="<%= sortHref('value') %>">
+                Стоимость
+                <% if (filters.sort === 'value') { %>
+                  <span aria-hidden="true"><%= filters.dir === 'asc' ? '↑' : '↓' %></span>
+                <% } %>
+              </a>
+            </th>
+            <th class="table__heading" scope="col">Статус</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% for (const item of rows) { %>
+            <tr class="table__row">
+              <td class="table__cell table__cell--code"><%= item.sku %></td>
+              <td class="table__cell">
+                <a href="/components/<%= item.id %>"><%= item.name %></a>
+                <% if (item.manufacturerName) { %>
+                  <span class="table__cell--muted">· <%= item.manufacturerName %></span>
+                <% } %>
+                <% if (canManageCatalog) { %>
+                  <span class="table__cell--muted" aria-hidden="true">·</span>
+                  <a
+                    class="table__cell--muted"
+                    href="/admin/components/<%= item.id %>"
+                    aria-label="Изменить позицию «<%= item.name %>»"
+                  >
+                    Изменить
+                  </a>
+                <% } %>
+              </td>
+              <td class="table__cell"><%= item.categoryName ?? '—' %></td>
+              <td class="table__cell table__cell--num"><%= formatQty(item.qty) %></td>
+              <td class="table__cell"><%= item.unit %></td>
+              <td class="table__cell table__cell--num"><%= formatQty(item.minStock) %></td>
+              <td class="table__cell table__cell--num table__cell--muted">—</td>
+              <td class="table__cell table__cell--num"><%- money(item.value) %></td>
+              <td class="table__cell">
+                <%- include('../../partials/status-chip', { status: item.status }) %>
+              </td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+
+    <%- include('../../partials/pagination', {
+      page,
+      totalPages: pages,
+      basePath: '/components',
+      params: paginationParams,
+    }) %>
+  <% } %>
+</section>

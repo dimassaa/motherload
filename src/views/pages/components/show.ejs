@@ -1,0 +1,389 @@
+<%
+  const MOVEMENT_TYPES = {
+    receipt: 'Приёмка',
+    issue: 'Расход',
+    transfer: 'Перемещение',
+  };
+
+  const movementHref = (target) =>
+    queryString(`/components/${component.id}`, {
+      showAll: warehouses.showAll ? '1' : '',
+      warehouseId: consumption.warehouseId,
+      movementsPage: target,
+    });
+
+  const warehouseToggleHref = queryString(`/components/${component.id}`, {
+    showAll: warehouses.showAll ? '' : '1',
+    warehouseId: consumption.warehouseId,
+    // Changing which warehouses are visible must not lose the movement page
+    // the user was reading.
+    movementsPage: movements.page > 1 ? movements.page : '',
+  });
+%>
+<section aria-labelledby="component-title">
+  <div class="page-header">
+    <div>
+      <p class="axis-label"><a href="/components">← К каталогу</a></p>
+      <h1 id="component-title" class="page-header__title"><%= component.name %></h1>
+      <p class="page-header__meta">
+        SKU <%= component.sku %> · <%= component.categoryName ?? 'Без категории' %>
+      </p>
+    </div>
+    <%- include('../../partials/status-chip', {
+      status: component.isActive ? 'active' : 'archived',
+    }) %>
+  </div>
+
+  <div class="card-stack">
+    <section class="card" aria-labelledby="component-summary-title">
+      <h2 id="component-summary-title" class="card__title">Основное</h2>
+      <div class="detail-grid">
+        <div class="detail-item">
+          <span class="detail-item__label">Категория</span>
+          <span class="detail-item__value"><%= component.categoryName ?? '—' %></span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-item__label">Производитель</span>
+          <span class="detail-item__value"><%= component.manufacturerName ?? '—' %></span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-item__label">Поставщик по умолчанию</span>
+          <span class="detail-item__value"><%= component.supplierName ?? '—' %></span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-item__label">Единица измерения</span>
+          <span class="detail-item__value"><%= component.unit %></span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-item__label">Мин. / макс. на складе</span>
+          <span class="detail-item__value">
+            <%= formatQty(component.minStock) %> / <%= component.maxStock === null ? '—' : formatQty(component.maxStock) %>
+          </span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-item__label">Срок поставки</span>
+          <span class="detail-item__value">
+            <%= component.leadTimeDays === null ? '—' : `${component.leadTimeDays} дн.` %>
+          </span>
+        </div>
+      </div>
+
+      <% if (component.specs && Object.keys(component.specs).length > 0) { %>
+        <details class="details-json">
+          <summary>Характеристики</summary>
+          <pre><%= JSON.stringify(component.specs, null, 2) %></pre>
+        </details>
+      <% } %>
+    </section>
+
+    <div class="card-grid">
+      <section class="card" aria-labelledby="component-purchase-title">
+        <h2 id="component-purchase-title" class="card__title">Закупочная цена</h2>
+        <p class="stat-value"><%- money(component.purchasePrice) %></p>
+      </section>
+      <section class="card" aria-labelledby="component-retail-title">
+        <h2 id="component-retail-title" class="card__title">Розничная цена</h2>
+        <p class="stat-value"><%- money(component.retailPrice) %></p>
+      </section>
+      <section class="card" aria-labelledby="component-average-title">
+        <h2 id="component-average-title" class="card__title">Средневзвешенная себестоимость</h2>
+        <p class="stat-value">
+          <% if (component.avgCost === null) { %>
+            —
+          <% } else { %>
+            <%- money(component.avgCost) %>
+          <% } %>
+        </p>
+      </section>
+    </div>
+
+    <% if (canManageStock) { %>
+      <section class="card" aria-labelledby="component-actions-title">
+        <h2 id="component-actions-title" class="card__title">Быстрые действия</h2>
+        <p class="card__text">Документ откроется с уже выбранной позицией.</p>
+        <div class="card-actions">
+          <a class="btn btn--primary" href="/stock/receipts/new?componentId=<%= component.id %>">
+            Принять
+          </a>
+          <a class="btn btn--outline" href="/stock/issues/new?componentId=<%= component.id %>">
+            Списать
+          </a>
+          <a class="btn btn--outline" href="/stock/transfers/new?componentId=<%= component.id %>">
+            Переместить
+          </a>
+        </div>
+      </section>
+    <% } %>
+
+    <section class="card" aria-labelledby="component-warehouses-title">
+      <div class="section__title">
+        <h2 id="component-warehouses-title" class="card__title">Остатки по складам</h2>
+        <% if (warehouses.hiddenCount > 0 || warehouses.showAll) { %>
+          <a class="btn btn--ghost btn--sm" href="<%= warehouseToggleHref %>">
+            <%= warehouses.showAll ? 'Скрыть склады без остатка' : `Показать все склады (+${warehouses.hiddenCount})` %>
+          </a>
+        <% } %>
+      </div>
+
+      <p class="page-header__meta">
+        Всего: <%= formatQty(component.qty) %> · <%- money(component.value) %>
+      </p>
+
+      <% if (warehouses.items.length === 0) { %>
+        <%- include('../../partials/empty-state', {
+          title: 'Нет остатков и движений',
+          text: 'За последние 180 дней позиция не двигалась и не хранилась ни на одном складе.',
+        }) %>
+      <% } else { %>
+        <div class="table-wrap">
+          <table class="table">
+            <thead class="table__head">
+              <tr>
+                <th class="table__heading" scope="col">Склад</th>
+                <th class="table__heading table__cell--num" scope="col">Остаток</th>
+                <th class="table__heading table__cell--num" scope="col">Стоимость</th>
+                <th class="table__heading table__cell--num" scope="col">Мин.</th>
+                <th class="table__heading table__cell--num" scope="col">Макс.</th>
+                <th class="table__heading table__cell--num" scope="col">ROP</th>
+                <th class="table__heading" scope="col">Статус</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% for (const warehouse of warehouses.items) { %>
+                <tr class="table__row">
+                  <td class="table__cell">
+                    <%= warehouse.name %>
+                    <span class="table__cell--muted">· <%= warehouse.city %></span>
+                    <% if (!warehouse.isActive) { %>
+                      <span class="table__cell--muted">· неактивен</span>
+                    <% } %>
+                  </td>
+                  <td class="table__cell table__cell--num"><%= formatQty(warehouse.qty) %></td>
+                  <td class="table__cell table__cell--num"><%- money(warehouse.value) %></td>
+                  <td class="table__cell table__cell--num"><%= formatQty(warehouse.minStock) %></td>
+                  <td class="table__cell table__cell--num">
+                    <%= warehouse.maxStock === null ? '—' : formatQty(warehouse.maxStock) %>
+                  </td>
+                  <td class="table__cell table__cell--num table__cell--muted">—</td>
+                  <td class="table__cell">
+                    <%- include('../../partials/status-chip', { status: warehouse.status }) %>
+                  </td>
+                </tr>
+              <% } %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+    </section>
+
+    <section class="card" aria-labelledby="component-batches-title">
+      <h2 id="component-batches-title" class="card__title">Партии</h2>
+      <% if (batches.truncated) { %>
+        <p class="page-header__meta">Показаны последние 200 партий.</p>
+      <% } %>
+      <% if (batches.items.length === 0) { %>
+        <%- include('../../partials/empty-state', {
+          title: 'Партий пока нет',
+          text: 'Позиция ещё не принималась ни на один склад.',
+        }) %>
+      <% } else { %>
+        <div class="table-wrap">
+          <table class="table">
+            <thead class="table__head">
+              <tr>
+                <th class="table__heading" scope="col">Дата</th>
+                <th class="table__heading" scope="col">Склад</th>
+                <th class="table__heading" scope="col">Поставщик</th>
+                <th class="table__heading" scope="col">Документ</th>
+                <th class="table__heading table__cell--num" scope="col">Получено</th>
+                <th class="table__heading table__cell--num" scope="col">Остаток</th>
+                <th class="table__heading table__cell--num" scope="col">Себестоимость</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% for (const batch of batches.items) { %>
+                <tr class="table__row">
+                  <td class="table__cell table__cell--code"><%= formatDate(batch.receivedAt) %></td>
+                  <td class="table__cell"><%= batch.warehouseName %></td>
+                  <td class="table__cell"><%= batch.supplierName ?? '—' %></td>
+                  <td class="table__cell table__cell--code"><%= batch.documentNo ?? '—' %></td>
+                  <td class="table__cell table__cell--num"><%= formatQty(batch.qtyReceived) %></td>
+                  <td class="table__cell table__cell--num"><%= formatQty(batch.qtyRemaining) %></td>
+                  <td class="table__cell table__cell--num"><%- money(batch.unitCost) %></td>
+                </tr>
+              <% } %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+    </section>
+
+    <div class="card-grid">
+      <section class="card" aria-labelledby="component-consumption-title">
+        <h2 id="component-consumption-title" class="card__title">
+          Расход по месяцам: <%= consumption.warehouseName ?? 'все склады' %>
+        </h2>
+        <p class="card__text">
+          Списание по документам расхода за 6 месяцев. График появится вместе с аналитикой.
+        </p>
+
+        <form class="consumption-filter" method="get" action="/components/<%= component.id %>">
+          <% if (warehouses.showAll) { %>
+            <input type="hidden" name="showAll" value="1">
+          <% } %>
+          <% if (movements.page > 1) { %>
+            <input type="hidden" name="movementsPage" value="<%= movements.page %>">
+          <% } %>
+
+          <div class="form-field">
+            <label class="form-field__label" for="consumption-warehouse">Склад для расхода</label>
+            <select class="form-field__select" id="consumption-warehouse" name="warehouseId">
+              <option value="" <%- consumption.warehouseId === null ? 'selected' : '' %>>
+                Все склады
+              </option>
+              <% for (const warehouse of warehouses.all) { %>
+                <option
+                  value="<%= warehouse.warehouseId %>"
+                  <%- consumption.warehouseId === warehouse.warehouseId ? 'selected' : '' %>
+                >
+                  <%= warehouse.name %>
+                </option>
+              <% } %>
+            </select>
+          </div>
+
+          <button class="btn btn--outline btn--sm" type="submit">Показать</button>
+        </form>
+
+        <ul class="consumption-list">
+          <% for (const month of consumption.months) { %>
+            <li class="consumption-list__row">
+              <span class="consumption-list__label"><%= month.label %></span>
+              <progress
+                class="consumption-list__progress"
+                max="<%= consumption.max > 0 ? consumption.max : 1 %>"
+                value="<%= month.qty %>"
+                aria-label="<%= month.label %>: <%= formatQty(month.qty) %> <%= component.unit %>"
+              ></progress>
+              <span class="consumption-list__value"><%= formatQty(month.qty) %></span>
+            </li>
+          <% } %>
+        </ul>
+
+        <p class="page-header__meta">
+          Итого за 6 месяцев: <%= formatQty(consumption.total) %> <%= component.unit %>
+        </p>
+      </section>
+
+      <section class="card" aria-labelledby="component-replenishment-title">
+        <h2 id="component-replenishment-title" class="card__title">Параметры пополнения</h2>
+        <p class="card__text">
+          Расчёт появится вместе с точкой заказа. Пока значения не определены.
+        </p>
+
+        <dl class="definition-list">
+          <div class="definition-list__row">
+            <dt>Средний дневной расход</dt>
+            <dd>—</dd>
+          </div>
+          <div class="definition-list__row">
+            <dt>Страховой запас</dt>
+            <dd>—</dd>
+          </div>
+          <div class="definition-list__row">
+            <dt>Точка заказа (ROP)</dt>
+            <dd>—</dd>
+          </div>
+          <div class="definition-list__row">
+            <dt>EOQ</dt>
+            <dd>—</dd>
+          </div>
+          <div class="definition-list__row">
+            <dt>Рекомендуемый заказ</dt>
+            <dd>—</dd>
+          </div>
+        </dl>
+      </section>
+    </div>
+
+    <section class="card" aria-labelledby="component-movements-title">
+      <div class="section__title">
+        <h2 id="component-movements-title" class="card__title">Движения</h2>
+        <p class="page-header__meta">Движения: <%= movements.total %></p>
+      </div>
+
+      <% if (movements.items.length === 0) { %>
+        <%- include('../../partials/empty-state', {
+          title: 'Движений пока нет',
+          text: 'Приёмки и списания этой позиции появятся здесь.',
+        }) %>
+      <% } else { %>
+        <div class="table-wrap">
+          <table class="table">
+            <thead class="table__head">
+              <tr>
+                <th class="table__heading" scope="col">Дата</th>
+                <th class="table__heading" scope="col">Тип</th>
+                <th class="table__heading" scope="col">Склад</th>
+                <th class="table__heading table__cell--num" scope="col">Количество</th>
+                <th class="table__heading table__cell--num" scope="col">Себестоимость</th>
+                <th class="table__heading" scope="col">Документ</th>
+                <th class="table__heading" scope="col">Пользователь</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% for (const movement of movements.items) { %>
+                <% const delta = Number(movement.qtyDelta); %>
+                <tr class="table__row">
+                  <td class="table__cell table__cell--code">
+                    <%= formatDateTime(movement.createdAt) %>
+                  </td>
+                  <td class="table__cell">
+                    <%= MOVEMENT_TYPES[movement.documentType] ?? 'Корректировка' %>
+                  </td>
+                  <td class="table__cell"><%= movement.warehouseName %></td>
+                  <td class="table__cell table__cell--num">
+                    <span class="<%= delta > 0 ? 'movement-qty--in' : 'movement-qty--out' %>">
+                      <%= delta > 0 ? '+' : '−' %><%= formatQty(Math.abs(delta)) %>
+                    </span>
+                  </td>
+                  <td class="table__cell table__cell--num"><%- money(movement.unitCost) %></td>
+                  <td class="table__cell table__cell--code"><%= movement.documentNumber ?? '—' %></td>
+                  <td class="table__cell"><%= movement.userName ?? '—' %></td>
+                </tr>
+              <% } %>
+            </tbody>
+          </table>
+        </div>
+
+        <% if (movements.pages > 1) { %>
+          <nav class="pagination" aria-label="Постраничная навигация по движениям">
+            <% if (movements.page > 1) { %>
+              <a class="pagination__link" href="<%= movementHref(movements.page - 1) %>" rel="prev">
+                ← Назад
+              </a>
+            <% } else { %>
+              <span class="pagination__link pagination__link--disabled" aria-disabled="true">
+                ← Назад
+              </span>
+            <% } %>
+
+            <span class="pagination__status">
+              Страница <%= movements.page %> из <%= movements.pages %>
+            </span>
+
+            <% if (movements.page < movements.pages) { %>
+              <a class="pagination__link" href="<%= movementHref(movements.page + 1) %>" rel="next">
+                Вперёд →
+              </a>
+            <% } else { %>
+              <span class="pagination__link pagination__link--disabled" aria-disabled="true">
+                Вперёд →
+              </span>
+            <% } %>
+          </nav>
+        <% } %>
+      <% } %>
+    </section>
+  </div>
+</section>
