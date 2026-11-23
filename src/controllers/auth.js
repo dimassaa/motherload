@@ -1,11 +1,40 @@
 import { z } from 'zod';
+import { env } from '../config/env.js';
 import { SESSION_COOKIE_NAME, sessionCookieOptions } from '../config/session.js';
 import { UnauthorizedError } from '../domain/errors.js';
 import { login as loginService } from '../services/auth.js';
 import * as audit from '../services/audit.js';
 
 const LANDING_TITLE = 'Motherload — складской терминал';
+const LANDING_DESCRIPTION =
+  'Складской терминал для комплектующих: остатки по партиям, расход по FIFO, ' +
+  'инвентаризация и аналитика запасов.';
+const LANDING_CANONICAL_URL = new URL('/', env.appUrl).toString();
+const LANDING_OG_IMAGE_URL = new URL('/img/og-cover.png', env.appUrl).toString();
 const LOGIN_FORM_ERROR = 'Введите email и пароль.';
+
+// Structured data is serialized once at boot. The values are constants, so the
+// template can print the string without escaping and without a view helper.
+const LANDING_JSON_LD = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'Motherload',
+  applicationCategory: 'BusinessApplication',
+  operatingSystem: 'Web',
+  inLanguage: 'ru-BY',
+  description: LANDING_DESCRIPTION,
+  url: LANDING_CANONICAL_URL,
+});
+
+const LANDING_PAGE_META = Object.freeze({
+  title: LANDING_TITLE,
+  description: LANDING_DESCRIPTION,
+  canonicalUrl: LANDING_CANONICAL_URL,
+  ogImageUrl: LANDING_OG_IMAGE_URL,
+  openGraph: true,
+  jsonLd: LANDING_JSON_LD,
+  noindex: false,
+});
 
 const loginSchema = z.object({
   email: z.string().trim().min(1).max(254),
@@ -14,7 +43,7 @@ const loginSchema = z.object({
 
 function renderLanding(res, { status = 200, email = '', error = null } = {}) {
   res.status(status).render('pages/landing', {
-    title: LANDING_TITLE,
+    pageMeta: LANDING_PAGE_META,
     email,
     loginError: error,
   });

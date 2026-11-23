@@ -1,17 +1,61 @@
 <%
-  // Private pages are never indexed; the public landing stays indexable.
-  // Canonical/Open Graph metadata is not emitted yet (open item in IMPROVEMENTS.md).
-  const pageNoindex = typeof noindex === 'undefined' ? Boolean(currentUser) : noindex;
+  // `pageMeta` is published by attachLocals with private-page defaults and
+  // replaced wholesale by the public landing. Keeping the decisions here means
+  // individual views only set a title and never repeat social/canonical markup.
+  const meta = typeof pageMeta !== 'undefined' && pageMeta ? pageMeta : {};
+  const pageTitle =
+    typeof meta.title === 'string' && meta.title
+      ? meta.title
+      : typeof title !== 'undefined' && title
+        ? title
+        : 'Motherload';
+  const pageDescription = typeof meta.description === 'string' ? meta.description : '';
+  const pageCanonicalUrl = typeof meta.canonicalUrl === 'string' ? meta.canonicalUrl : '';
+  const pageOgImageUrl = typeof meta.ogImageUrl === 'string' ? meta.ogImageUrl : '';
+  const pageJsonLd = typeof meta.jsonLd === 'string' ? meta.jsonLd : '';
+  const pageNoindex =
+    typeof meta.noindex === 'boolean'
+      ? meta.noindex
+      : typeof noindex === 'undefined'
+        ? true
+        : noindex;
+  const pageOpenGraph =
+    meta.openGraph === true && pageDescription !== '' && pageCanonicalUrl !== '' && pageOgImageUrl !== '';
 %>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><%= typeof title !== 'undefined' && title ? title : 'Motherload' %></title>
-<%# Fetch clients (the FIFO preview) read the double-submit token from here. %>
-<% if (typeof csrfToken !== 'undefined' && csrfToken) { %>
-<meta name="csrf-token" content="<%= csrfToken %>">
+<title><%= pageTitle %></title>
+<% if (pageDescription) { %>
+<meta name="description" content="<%= pageDescription %>">
+<% } %>
+<% if (pageCanonicalUrl) { %>
+<link rel="canonical" href="<%= pageCanonicalUrl %>">
 <% } %>
 <% if (pageNoindex) { %>
 <meta name="robots" content="noindex, nofollow">
+<% } %>
+<% if (pageOpenGraph) { %>
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Motherload">
+<meta property="og:locale" content="ru_BY">
+<meta property="og:title" content="<%= pageTitle %>">
+<meta property="og:description" content="<%= pageDescription %>">
+<meta property="og:url" content="<%= pageCanonicalUrl %>">
+<meta property="og:image" content="<%= pageOgImageUrl %>">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Motherload — складской терминал комплектующих">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="<%= pageTitle %>">
+<meta name="twitter:description" content="<%= pageDescription %>">
+<meta name="twitter:image" content="<%= pageOgImageUrl %>">
+<% } %>
+<% if (pageJsonLd) { %>
+<script type="application/ld+json"><%- pageJsonLd %></script>
+<% } %>
+<%# Fetch clients (the FIFO preview) read the double-submit token from here. %>
+<% if (typeof csrfToken !== 'undefined' && csrfToken) { %>
+<meta name="csrf-token" content="<%= csrfToken %>">
 <% } %>
 <link
   rel="icon"

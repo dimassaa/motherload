@@ -4,28 +4,7 @@ Open, verified items only. Resolved findings are removed; version control and th
 task reports keep their history. Each item states the impact and why it was not
 fixed in the stage that found it.
 
-## Spec gap
-
-### 2026-11-23, Task 24 — public SEO metadata is missing
-
-Spec §11 and acceptance criterion 13 require `description`, `canonical`, Open
-Graph and Twitter tags and JSON-LD `SoftwareApplication` on the public landing,
-plus `robots.txt` and `sitemap.xml` served by the application and a committed
-`public/img/og-cover.png` (1200×630). The current `head.ejs` emits only the
-title, favicon and `noindex` for private pages; `scripts/build-og.js` waits for
-an `og-cover.svg` that was never committed. This is not cosmetic: it is an unmet
-acceptance criterion and must be scheduled before submission.
-
 ## Interface
-
-### 2026-11-23, Task 24 — 400/403/404/500 pages do not use the app layout
-
-`src/middleware/errors.js` still answers browsers with a minimal bootstrap HTML
-page (title, `h1`, one paragraph) instead of the shared header, footer and error
-styling from §5.19. Status codes and Russian messages are correct, and API
-callers get JSON, so the functional contract holds; only the presentation is
-unfinished. Replacing the bootstrap response with a rendered view is a small,
-self-contained change.
 
 ### 2026-11-23, Task 24 — `GET /login` returns 404
 

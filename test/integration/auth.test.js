@@ -288,7 +288,8 @@ test('landing renders a working login form, demo credentials and the version sta
   assert.match(res.text, /admin@motherload\.by/);
   assert.match(res.text, /MOTHERLOAD \/ v1\.0 \/ 2026/);
   assert.doesNotMatch(res.text, /\sstyle="/);
-  assert.doesNotMatch(res.text, /<script(?![^>]*\bsrc=)/);
+  // JSON-LD is an inert data block, not an executable inline script.
+  assert.doesNotMatch(res.text, /<script(?![^>]*(?:\bsrc=|application\/ld\+json))/);
 });
 
 test('password policy rejects weak passwords with a Russian message', async () => {

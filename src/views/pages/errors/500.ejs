@@ -1,0 +1,18 @@
+<%
+  const backHref = typeof currentUser !== 'undefined' && currentUser ? '/dashboard' : '/';
+  const backLabel = backHref === '/dashboard' ? 'Вернуться на обзор' : 'На главную';
+%>
+<section class="error-page" aria-labelledby="error-title">
+  <p class="axis-label">
+    <span>[ Ошибка 500 ]</span>
+    <span>[ Сервер ]</span>
+  </p>
+
+  <h1 id="error-title" class="error-page__title">Что-то пошло не так</h1>
+  <p class="error-page__text">
+    Мы записали ошибку и уже разбираемся. Обновите страницу через минуту — обычно этого достаточно,
+    чтобы вернуться к работе.
+  </p>
+
+  <a class="btn btn--outline" href="<%= backHref %>"><%= backLabel %></a>
+</section>
