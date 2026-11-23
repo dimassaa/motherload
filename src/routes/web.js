@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as adminController from '../controllers/admin.js';
 import * as adminComponentsController from '../controllers/admin-components.js';
 import * as adminDirectoriesController from '../controllers/admin-directories.js';
+import * as analyticsController from '../controllers/analytics.js';
 import * as authController from '../controllers/auth.js';
 import * as componentsController from '../controllers/components.js';
 import * as inventoryController from '../controllers/inventory.js';
@@ -41,6 +42,12 @@ export function createWebRouter({ loginLimiter }) {
   // admin routes so the read model cannot be used to mutate a position.
   router.get('/components', requireAuth, componentsController.showList);
   router.get('/components/:id', requireAuth, componentsController.showCard);
+
+  // Analytics is read-only for every role: analysts need it without stock
+  // rights, and admins/storekeepers read the same numbers. There are no POST
+  // routes, so there is nothing to protect beyond authentication.
+  router.get('/analytics/abc', requireAuth, analyticsController.showAbc);
+  router.get('/analytics/xyz', requireAuth, analyticsController.showXyz);
 
   // Stock operations are a storekeeper/admin workflow. Every route enforces
   // the role on the server; the navigation only hides the links. `/stock`

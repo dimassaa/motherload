@@ -1,0 +1,185 @@
+<%
+  const abcHref = queryString('/analytics/abc', {
+    warehouseId: filters.warehouseId,
+    categoryId: filters.categoryId,
+  });
+  const firstMonth = window.months[0];
+  const lastMonth = window.months[window.months.length - 1];
+  const cvText = (value) => (value === null ? '—' : formatQty(value));
+%>
+<section aria-labelledby="xyz-title">
+  <div class="page-header">
+    <div>
+      <p class="axis-label">
+        <span>[ Аналитика ]</span>
+        <span>Регулярность расхода за 6 полных месяцев</span>
+      </p>
+      <h1 id="xyz-title" class="page-header__title">XYZ-анализ</h1>
+      <p class="page-header__meta">
+        Окно: <%= firstMonth.label %> — <%= lastMonth.label %>
+        · Позиций: <%= formatQty(rows.length) %>
+      </p>
+    </div>
+    <a class="btn btn--ghost btn--sm" href="<%= abcHref %>">ABC-анализ →</a>
+  </div>
+
+  <form class="filter-bar" method="get" action="/analytics/xyz" role="search" aria-label="Фильтры XYZ-анализа">
+    <div class="form-field">
+      <label class="form-field__label" for="xyz-warehouse">Склад</label>
+      <select class="form-field__select" id="xyz-warehouse" name="warehouseId">
+        <option value="" <%- filters.warehouseId === null ? 'selected' : '' %>>Все склады</option>
+        <% for (const warehouse of options.warehouses) { %>
+          <option
+            value="<%= warehouse.id %>"
+            <%- String(filters.warehouseId ?? '') === String(warehouse.id) ? 'selected' : '' %>
+          >
+            <%= warehouse.name %><%= warehouse.isActive ? '' : ' (неактивен)' %>
+          </option>
+        <% } %>
+      </select>
+    </div>
+
+    <div class="form-field">
+      <label class="form-field__label" for="xyz-category">Категория</label>
+      <select class="form-field__select" id="xyz-category" name="categoryId">
+        <option value="" <%- filters.categoryId === null ? 'selected' : '' %>>Все категории</option>
+        <% for (const category of options.categories) { %>
+          <option
+            value="<%= category.id %>"
+            <%- String(filters.categoryId ?? '') === String(category.id) ? 'selected' : '' %>
+          >
+            <%= category.name %>
+          </option>
+        <% } %>
+      </select>
+    </div>
+
+    <div class="filter-bar__actions">
+      <button class="btn btn--outline btn--sm" type="submit">Показать</button>
+      <a class="btn btn--ghost btn--sm" href="/analytics/xyz">Сбросить</a>
+    </div>
+  </form>
+
+  <% if (rows.length === 0) { %>
+    <%- include('../../partials/empty-state', {
+      title: 'Нет данных для XYZ-анализа',
+      text: 'Для выбранных склада и категории нет ни остатков, ни расхода за шесть полных месяцев. Измените фильтры.',
+    }) %>
+  <% } else { %>
+    <div class="card-stack">
+      <section class="card" aria-labelledby="xyz-matrix-title">
+        <h2 id="xyz-matrix-title" class="card__title">Матрица ABC × XYZ</h2>
+        <p class="card__text">
+          Строки — класс по стоимости остатка, столбцы — класс по регулярности расхода.
+          В ячейках — количество позиций.
+        </p>
+
+        <div class="table-wrap matrix-wrap">
+          <table class="matrix">
+            <caption class="matrix__caption">
+              Всего позиций в матрице: <%= formatQty(matrix.total) %>
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col" class="matrix__corner">ABC ↓ / XYZ →</th>
+                <% for (const xyzClass of matrix.xyzClasses) { %>
+                  <th scope="col" class="matrix__heading">Класс <%= xyzClass %></th>
+                <% } %>
+              </tr>
+            </thead>
+            <tbody>
+              <% for (const matrixRow of matrix.rows) { %>
+                <tr>
+                  <th scope="row" class="matrix__row-heading">Класс <%= matrixRow.abc %></th>
+                  <% for (const cell of matrixRow.cells) { %>
+                    <td class="matrix__cell <%= cell.count === 0 ? 'matrix__cell--zero' : '' %>">
+                      <%= formatQty(cell.count) %>
+                    </td>
+                  <% } %>
+                </tr>
+              <% } %>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="xyz-formulas-title">
+        <h2 id="xyz-formulas-title" class="card__title">Как считается</h2>
+        <ul class="formula-list">
+          <li>
+            <strong>Окно.</strong> Шесть полных календарных месяцев до даты отчёта:
+            <%= firstMonth.label %> — <%= lastMonth.label %>. Текущий месяц не учитывается,
+            потому что он ещё не закончился.
+          </li>
+          <li>
+            <strong>Месячный расход.</strong> Сумма количества по документам расхода за месяц.
+            Месяцы без расхода считаются нулями.
+          </li>
+          <li>
+            <strong>Средний расход.</strong> Сумма расхода за шесть месяцев, делённая на 6.
+          </li>
+          <li>
+            <strong>Стандартное отклонение.</strong>
+            Корень из суммы квадратов отклонений от среднего, делённой на 6: считается
+            по всей совокупности месяцев, а не по выборке.
+          </li>
+          <li>
+            <strong>Коэффициент вариации (CV).</strong> Стандартное отклонение, делённое
+            на средний расход.
+          </li>
+          <li>
+            <strong>Классы.</strong> X — CV не больше 0,10; Y — CV не больше 0,25;
+            Z — CV больше 0,25. Если расхода нет, CV не определён, и позиция попадает в Z.
+          </li>
+        </ul>
+      </section>
+
+      <section class="card" aria-labelledby="xyz-table-title">
+        <h2 id="xyz-table-title" class="card__title">Позиции</h2>
+        <div class="table-wrap">
+          <table class="table">
+            <thead class="table__head">
+              <tr>
+                <th class="table__heading" scope="col">SKU</th>
+                <th class="table__heading" scope="col">Название</th>
+                <th class="table__heading table__cell--num" scope="col">Средний расход</th>
+                <th class="table__heading table__cell--num" scope="col">Стандартное отклонение</th>
+                <th class="table__heading table__cell--num" scope="col">CV</th>
+                <th class="table__heading" scope="col">Класс</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% for (const row of rows) { %>
+                <tr class="table__row">
+                  <td class="table__cell table__cell--code"><%= row.sku %></td>
+                  <td class="table__cell">
+                    <%= row.name %>
+                    <% if (!row.isActive) { %>
+                      <span class="table__cell--muted">· в архиве</span>
+                    <% } %>
+                  </td>
+                  <td class="table__cell table__cell--num">
+                    <%= formatQty(row.mean) %> <%= row.unit %>
+                  </td>
+                  <td class="table__cell table__cell--num">
+                    <%= formatQty(row.stddev) %> <%= row.unit %>
+                  </td>
+                  <td class="table__cell table__cell--num">
+                    <% if (row.cv === null) { %>
+                      <span class="table__cell--muted">нет расхода</span>
+                    <% } else { %>
+                      <%= cvText(row.cv) %>
+                    <% } %>
+                  </td>
+                  <td class="table__cell">
+                    <span class="tag tag--stamp" aria-label="Класс <%= row.class %>"><%= row.class %></span>
+                  </td>
+                </tr>
+              <% } %>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  <% } %>
+</section>

@@ -125,3 +125,22 @@ the static OG cover locally and is never loaded by the server, so it does not
 affect the runtime image (`npm prune --omit=dev` in the Dockerfile). Deferred:
 the approved dependency range is `sharp@^0.34`, and the fix requires an upgrade
 decision that belongs to Task 24 (docs, CI, final polish).
+
+## 2026-11-23, Task 18 — analytics pages are not in the main navigation
+
+`/analytics/abc` and `/analytics/xyz` exist and link to each other, but
+`nav-links.ejs` still omits an «Аналитика» entry. Adding it here would have
+required editing a file outside this task's scope and would also invalidate the
+Task 14 regression assertion in `test/integration/stock-ui.test.js` that analytics
+links stay hidden until their routes land. Wire the navigation together with
+Task 19/20, when dashboard and alerts also add entries, and update that assertion
+in the same change.
+
+## 2026-11-23, Task 18 — analytics and catalog duplicate the reference-date helper
+
+`src/services/analytics.js` repeats the small `ANALYTICS_REFERENCE_DATE` /
+Europe/Minsk "today" helper that `src/services/catalog.js` keeps private. Both
+must agree or the six-month card chart and the XYZ window could describe
+different months. Extract one shared helper when a third caller (reorder or
+alerts) needs it; moving the catalog one now would be an unrelated refactor.
+

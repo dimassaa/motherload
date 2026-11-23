@@ -22,5 +22,10 @@
     <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="false"></div>
 
     <%- include('../partials/footer') %>
+
+    <%# Charts are opt-in per page so only analytics downloads the bundled ESM build. %>
+    <% if (typeof loadCharts !== 'undefined' && loadCharts) { %>
+      <script type="module" src="/js/charts.js"></script>
+    <% } %>
   </body>
 </html>
