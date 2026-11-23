@@ -11,6 +11,17 @@ const DOC_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const FROZEN_WAREHOUSE_MESSAGE = 'На складе идёт инвентаризация';
 
+// Column bounds from db/migrations/001_init.sql. Input outside them would come
+// back from PostgreSQL as 22003/23514 and reach the user as an opaque 500, so
+// every field is bounded here, where the answer is still a Russian 400.
+const INTEGER_MAX = 2_147_483_647;
+const QTY_MAX = 1_000_000_000;
+const UNIT_COST_MAX = '9999999999.9999';
+const UNIT_COST_SCALE = 4;
+const LINE_TOTAL_MAX = '999999999999.99';
+const DOCUMENT_YEAR_MIN = 2000;
+const DOCUMENT_YEAR_MAX = 2999;
+
 /**
  * Lock the warehouse and refuse stock operations while an inventory count is
  * live. The row lock is taken first on purpose: inventory count creation takes
@@ -47,28 +58,56 @@ export async function assertWarehouseNotFrozen(client, warehouseId) {
  */
 function prepareLine(line, position) {
   const componentId = line?.componentId;
-  if (!Number.isSafeInteger(componentId) || componentId <= 0) {
+  if (!Number.isSafeInteger(componentId) || componentId < 1 || componentId > INTEGER_MAX) {
     throw new ValidationError(`Строка ${position}: выберите позицию.`);
   }
 
   const qty = line?.qty;
-  if (!Number.isSafeInteger(qty) || qty <= 0) {
+  if (!Number.isSafeInteger(qty) || qty < 1 || qty > QTY_MAX) {
     throw new ValidationError(
-      `Строка ${position}: количество должно быть целым положительным числом.`,
+      `Строка ${position}: количество должно быть целым числом от 1 до 1 000 000 000.`,
     );
   }
 
+  // `d` also rejects NaN, Infinity and non-numeric strings with a ValidationError.
   const unitCost = d(line?.unitCost);
   if (unitCost.isNegative()) {
     throw new ValidationError(`Строка ${position}: цена не может быть отрицательной.`);
+  }
+  if (unitCost.decimalPlaces() > UNIT_COST_SCALE) {
+    throw new ValidationError(
+      `Строка ${position}: цена указывается не более чем с 4 знаками после запятой.`,
+    );
+  }
+  if (unitCost.greaterThan(UNIT_COST_MAX)) {
+    throw new ValidationError(`Строка ${position}: цена слишком большая.`);
+  }
+
+  const lineTotal = unitCost.times(qty);
+  if (lineTotal.greaterThan(LINE_TOTAL_MAX)) {
+    throw new ValidationError(`Строка ${position}: сумма строки слишком большая.`);
   }
 
   return {
     componentId,
     qty,
     unitCost: toCost(unitCost),
-    totalCost: unitCost.times(qty).toFixed(2),
+    totalCost: lineTotal.toFixed(2),
   };
+}
+
+/**
+ * Require a database identifier that fits the `integer` columns.
+ * @param {unknown} value
+ * @param {string} message Russian, user-facing text
+ * @returns {number}
+ */
+function readId(value, message) {
+  if (!Number.isSafeInteger(value) || value < 1 || value > INTEGER_MAX) {
+    throw new ValidationError(message);
+  }
+
+  return value;
 }
 
 /**
@@ -98,7 +137,25 @@ function readDocumentYear(docDate) {
     throw new ValidationError('Укажите существующую дату документа.');
   }
 
-  return Number(docDate.slice(0, 4));
+  const year = Number(docDate.slice(0, 4));
+  // The same range the `document_sequences.year` check enforces; a document
+  // dated outside it would otherwise fail on the sequence insert with a 500.
+  if (year < DOCUMENT_YEAR_MIN || year > DOCUMENT_YEAR_MAX) {
+    throw new ValidationError('Год документа должен быть от 2000 до 2999.');
+  }
+
+  return year;
+}
+
+/**
+ * The stock document author is optional for scripts and seeds; when present it
+ * must be a real database identifier.
+ * @param {unknown} userId
+ * @returns {number | null}
+ */
+function readUserId(userId) {
+  if (userId === null || userId === undefined) return null;
+  return readId(userId, 'Не удалось определить автора документа.');
 }
 
 /**
@@ -177,14 +234,20 @@ export async function postReceipt({
 }) {
   const preparedLines = prepareLines(lines);
   const year = readDocumentYear(docDate);
+  const supplier = readId(supplierId, 'Выберите поставщика.');
+  const warehouse = readId(warehouseId, 'Выберите склад.');
+  const author = readUserId(userId);
 
   // Line totals are stored rounded to kopecks, so the document total is the sum
   // of the stored line totals — otherwise the printed document would not add up.
   const totalCost = preparedLines.reduce((sum, line) => sum.plus(line.totalCost), d(0)).toFixed(2);
+  if (d(totalCost).greaterThan(LINE_TOTAL_MAX)) {
+    throw new ValidationError('Сумма документа слишком большая.');
+  }
 
   const document = await withTransaction(async (client) => {
-    await assertWarehouseNotFrozen(client, warehouseId);
-    assertSupplierUsable(await stock.findSupplierById(client, supplierId));
+    await assertWarehouseNotFrozen(client, warehouse);
+    assertSupplierUsable(await stock.findSupplierById(client, supplier));
 
     const components = await stock.findComponentsByIds(
       client,
@@ -197,11 +260,11 @@ export async function postReceipt({
       type: 'receipt',
       number,
       docDate,
-      supplierId,
-      warehouseId,
+      supplierId: supplier,
+      warehouseId: warehouse,
       comment,
       totalCost,
-      createdBy: userId,
+      createdBy: author,
     });
 
     for (const line of preparedLines) {
@@ -215,8 +278,8 @@ export async function postReceipt({
 
       await stock.insertBatch(client, {
         componentId: line.componentId,
-        warehouseId,
-        supplierId,
+        warehouseId: warehouse,
+        supplierId: supplier,
         unitCost: line.unitCost,
         qty: line.qty,
         receivedAt: docDate,
@@ -225,7 +288,7 @@ export async function postReceipt({
 
       await stock.insertMovement(client, {
         componentId: line.componentId,
-        warehouseId,
+        warehouseId: warehouse,
         qtyDelta: line.qty,
         unitCost: line.unitCost,
         documentId: inserted.id,
@@ -236,6 +299,6 @@ export async function postReceipt({
     return { documentId: inserted.id, number };
   });
 
-  await recordReceiptAudit({ document, totalCost, userId, req });
+  await recordReceiptAudit({ document, totalCost, userId: author, req });
   return document;
 }

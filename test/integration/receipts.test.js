@@ -251,32 +251,18 @@ test('receipt is rejected for an inactive supplier or component', async (t) => {
   });
 });
 
-test('receipt writes nothing when the transaction fails midway', async () => {
+test('receipt writes nothing when the transaction fails after the number is reserved', async () => {
   const ctx = await seedBase();
-  const second = await createComponentFactory({
-    sku: 'SSD-TEST-01',
-    name: 'Накопитель тестовый',
-    categoryId: ctx.categoryId,
-    manufacturerId: ctx.manufacturerId,
-    supplierId: ctx.supplierId,
-  });
 
-  // The quantity exceeds the `integer` column, so PostgreSQL rejects the second
-  // line after the first line's document, batch and movement rows already exist.
-  // That is the only way to prove the transaction rolls those earlier writes back.
+  // Every numeric field is validated before the transaction, so the remaining
+  // deliberate database failure is an encoding violation: PostgreSQL cannot
+  // store a NUL byte in a text column. It surfaces at the document insert,
+  // after `nextDocumentNumber` has already bumped the sequence row, which is
+  // exactly the write the rollback has to undo.
   await assert.rejects(
-    () =>
-      postReceipt({
-        ...ctx.receiptInput,
-        lines: [
-          { componentId: ctx.componentId, qty: 3, unitCost: '10.0000' },
-          { componentId: second.id, qty: 3_000_000_000, unitCost: '10.0000' },
-        ],
-      }),
+    () => postReceipt({ ...ctx.receiptInput, comment: 'Приёмка\u0000без накладной' }),
     (error) => {
-      // 22003 = numeric_value_out_of_range: the failure came from PostgreSQL,
-      // after the transaction had already written the first line.
-      assert.equal(error.code, '22003');
+      assert.equal(error.code, '22021');
       return true;
     },
   );
@@ -289,9 +275,73 @@ test('receipt writes nothing when the transaction fails midway', async () => {
   assert.equal(await countRows('document_sequences'), 0);
   assert.equal((await receiptAudit()).length, 0);
 
-  // The rolled-back number must be handed out again to the next receipt.
+  // The rolled-back reservation must be handed out again to the next receipt.
   const retried = await postReceipt(ctx.receiptInput);
   assert.equal(retried.number, 'ПР-2026-0001');
+});
+
+test('receipt rejects values outside the database bounds with 400', async (t) => {
+  const cases = [
+    {
+      name: 'qty above the column limit',
+      overrides: (ctx) => ({
+        lines: [{ componentId: ctx.componentId, qty: 3_000_000_000, unitCost: '1.0000' }],
+      }),
+      message: /количество должно быть целым числом от 1 до 1 000 000 000/,
+    },
+    {
+      name: 'unit cost above numeric(14,4)',
+      overrides: (ctx) => ({
+        lines: [{ componentId: ctx.componentId, qty: 1, unitCost: '10000000000' }],
+      }),
+      message: /цена слишком большая/,
+    },
+    {
+      name: 'unit cost with more than four decimals',
+      overrides: (ctx) => ({
+        lines: [{ componentId: ctx.componentId, qty: 1, unitCost: '1.23456' }],
+      }),
+      message: /4 знаками после запятой/,
+    },
+    {
+      name: 'line total above numeric(14,2)',
+      overrides: (ctx) => ({
+        lines: [{ componentId: ctx.componentId, qty: 1_000_000_000, unitCost: '9999999999.9999' }],
+      }),
+      message: /сумма строки слишком большая/,
+    },
+    {
+      name: 'component id above the integer limit',
+      overrides: () => ({ lines: [{ componentId: 3_000_000_000, qty: 1, unitCost: '1.0000' }] }),
+      message: /выберите позицию/,
+    },
+    {
+      name: 'document year before the sequence range',
+      overrides: () => ({ docDate: '1999-12-31' }),
+      message: /Год документа должен быть от 2000 до 2999/,
+    },
+  ];
+
+  for (const scenario of cases) {
+    await t.test(scenario.name, async () => {
+      await truncateAll();
+      const ctx = await seedBase();
+
+      await assert.rejects(
+        () => postReceipt({ ...ctx.receiptInput, ...scenario.overrides(ctx) }),
+        (error) => {
+          assert.equal(error.status, 400);
+          assert.match(error.message, scenario.message);
+          return true;
+        },
+      );
+
+      assert.equal(await countRows('stock_documents'), 0);
+      assert.equal(await countRows('stock_batches'), 0);
+      assert.equal(await countRows('stock_movements'), 0);
+      assert.equal(await countRows('document_sequences'), 0);
+    });
+  }
 });
 
 test('receipt rejects malformed lines before touching the database', async () => {
