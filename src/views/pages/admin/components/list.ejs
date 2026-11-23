@@ -1,0 +1,175 @@
+<section aria-labelledby="components-title">
+  <div class="page-header">
+    <h1 id="components-title" class="page-header__title">Комплектующие</h1>
+    <a class="btn btn--primary" href="/admin/components/new">Добавить позицию</a>
+  </div>
+
+  <p class="page-header__meta">
+    Всего позиций: <%= total %>
+    <% if (total > pageSize) { %>
+      · страница <%= page %> из <%= totalPages %>
+    <% } %>
+  </p>
+
+  <%- include('../../../partials/form-errors', { errors }) %>
+
+  <form class="filter-bar" method="get" action="/admin/components">
+    <div class="form-field">
+      <label class="form-field__label" for="component-filter-q">Поиск</label>
+      <input
+        class="form-field__input"
+        id="component-filter-q"
+        name="q"
+        type="search"
+        placeholder="Название или SKU"
+        value="<%= filters.q %>"
+      >
+    </div>
+
+    <div class="form-field">
+      <label class="form-field__label" for="component-filter-category">Категория</label>
+      <select class="form-field__select" id="component-filter-category" name="categoryId">
+        <option value="" <%- filters.categoryId === null ? 'selected' : '' %>>Все категории</option>
+        <% for (const category of options.categories) { %>
+          <option
+            value="<%= category.id %>"
+            <%- String(filters.categoryId ?? '') === String(category.id) ? 'selected' : '' %>
+          >
+            <%= category.name %>
+          </option>
+        <% } %>
+      </select>
+    </div>
+
+    <div class="form-field">
+      <label class="form-field__label" for="component-filter-manufacturer">Производитель</label>
+      <select class="form-field__select" id="component-filter-manufacturer" name="manufacturerId">
+        <option value="" <%- filters.manufacturerId === null ? 'selected' : '' %>>
+          Все производители
+        </option>
+        <% for (const manufacturer of options.manufacturers) { %>
+          <option
+            value="<%= manufacturer.id %>"
+            <%- String(filters.manufacturerId ?? '') === String(manufacturer.id) ? 'selected' : ''
+            %>
+          >
+            <%= manufacturer.name %>
+          </option>
+        <% } %>
+      </select>
+    </div>
+
+    <div class="form-field">
+      <label class="form-field__label" for="component-filter-status">Статус</label>
+      <select class="form-field__select" id="component-filter-status" name="isActive">
+        <option value="" <%- filters.isActive === null ? 'selected' : '' %>>Все статусы</option>
+        <option value="true" <%- filters.isActive === true ? 'selected' : '' %>>Опубликованные</option>
+        <option value="false" <%- filters.isActive === false ? 'selected' : '' %>>В архиве</option>
+      </select>
+    </div>
+
+    <div class="filter-bar__actions">
+      <button class="btn btn--outline btn--sm" type="submit">Применить фильтры</button>
+      <a class="btn btn--ghost btn--sm" href="/admin/components">Сбросить</a>
+    </div>
+  </form>
+
+  <% if (items.length === 0) { %>
+    <%- include('../../../partials/empty-state', {
+      title: 'Позиции не найдены',
+      text: 'По выбранным условиям ничего нет. Сбросьте фильтры или добавьте новую позицию в каталог.',
+      actionHref: '/admin/components/new',
+      actionLabel: 'Добавить позицию',
+    }) %>
+  <% } else { %>
+    <div class="table-wrap">
+      <table class="table">
+        <thead class="table__head">
+          <tr>
+            <th class="table__heading" scope="col">SKU</th>
+            <th class="table__heading" scope="col">Название</th>
+            <th class="table__heading" scope="col">Категория</th>
+            <th class="table__heading" scope="col">Ед.</th>
+            <th class="table__heading" scope="col">Закупка</th>
+            <th class="table__heading" scope="col">Розница</th>
+            <th class="table__heading" scope="col">Мин. / макс.</th>
+            <th class="table__heading" scope="col">Статус</th>
+            <th class="table__heading" scope="col"><span class="visually-hidden">Действия</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% for (const item of items) { %>
+            <tr class="table__row">
+              <td class="table__cell table__cell--code"><%= item.sku %></td>
+              <td class="table__cell">
+                <a href="/admin/components/<%= item.id %>"><%= item.name %></a>
+              </td>
+              <td class="table__cell"><%= item.categoryName ?? '—' %></td>
+              <td class="table__cell"><%= item.unit %></td>
+              <td class="table__cell table__cell--num"><%- money(item.purchasePrice) %></td>
+              <td class="table__cell table__cell--num"><%- money(item.retailPrice) %></td>
+              <td class="table__cell table__cell--num">
+                <%= item.minStock %> / <%= item.maxStock ?? '—' %>
+              </td>
+              <td class="table__cell">
+                <%- include('../../../partials/status-chip', {
+                  status: item.isActive ? 'active' : 'archived',
+                }) %>
+              </td>
+              <td class="table__cell">
+                <div class="row-actions">
+                  <a
+                    href="/admin/components/<%= item.id %>"
+                    aria-label="Изменить позицию «<%= item.name %>»"
+                  >
+                    Изменить
+                  </a>
+
+                  <% if (item.isActive) { %>
+                    <form
+                      class="row-actions__archive"
+                      method="post"
+                      action="/admin/components/<%= item.id %>/archive"
+                      data-confirm="Перенести позицию «<%= item.name %>» в архив? История и остатки сохранятся, но новые документы с ней станут недоступны."
+                    >
+                      <%- csrfField() %>
+                      <button class="btn btn--ghost btn--sm" type="submit">
+                        В архив<span class="visually-hidden">: позиция «<%= item.name %>»</span>
+                      </button>
+                    </form>
+                  <% } %>
+
+                  <form
+                    class="row-actions__delete"
+                    method="post"
+                    action="/admin/components/<%= item.id %>/delete"
+                    data-confirm="Удалить позицию «<%= item.name %>»? Удаление возможно только без истории; иначе используйте архив."
+                  >
+                    <%- csrfField() %>
+                    <button class="btn btn--ghost btn--sm" type="submit">
+                      Удалить<span class="visually-hidden">: позиция «<%= item.name %>»</span>
+                    </button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+
+    <%- include('../../../partials/pagination', {
+      page,
+      totalPages,
+      basePath: '/admin/components',
+      params: {
+        q: filters.q,
+        categoryId: filters.categoryId ?? '',
+        manufacturerId: filters.manufacturerId ?? '',
+        isActive: filters.isActive === null ? '' : String(filters.isActive),
+      },
+    }) %>
+  <% } %>
+</section>
+
+<script type="module" src="/js/confirm-delete.js"></script>

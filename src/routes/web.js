@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as adminController from '../controllers/admin.js';
+import * as adminComponentsController from '../controllers/admin-components.js';
 import * as adminDirectoriesController from '../controllers/admin-directories.js';
 import * as authController from '../controllers/auth.js';
 import * as profileController from '../controllers/profile.js';
@@ -76,6 +77,28 @@ export function createWebRouter({ loginLimiter }) {
     '/admin/directories/:entity/:id',
     requireRole('admin'),
     adminDirectoriesController.updateDirectory,
+  );
+
+  // Component administration. `/new` is registered before `/:id` so the
+  // literal segment is not swallowed by the id parameter.
+  router.get('/admin/components', requireRole('admin'), adminComponentsController.showList);
+  router.get('/admin/components/new', requireRole('admin'), adminComponentsController.showNew);
+  router.post('/admin/components', requireRole('admin'), adminComponentsController.createComponent);
+  router.get('/admin/components/:id', requireRole('admin'), adminComponentsController.showEdit);
+  router.post(
+    '/admin/components/:id',
+    requireRole('admin'),
+    adminComponentsController.updateComponent,
+  );
+  router.post(
+    '/admin/components/:id/archive',
+    requireRole('admin'),
+    adminComponentsController.archiveComponent,
+  );
+  router.post(
+    '/admin/components/:id/delete',
+    requireRole('admin'),
+    adminComponentsController.deleteComponent,
   );
 
   return router;
