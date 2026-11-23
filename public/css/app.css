@@ -1397,10 +1397,36 @@ a.app-header__identity:hover {
   display: inline-flex;
 }
 
+.row-actions__archive {
+  display: inline-flex;
+}
+
 /* Deletion is destructive; the red label is repeated by the confirm dialog and
    is never the only cue. */
 .row-actions__delete .btn {
   color: var(--color-danger);
+}
+
+/* Component administration: one long form spread across section cards. The
+   narrow column keeps labels and inputs readable; the numeric pairs sit
+   side by side on wide screens and stack on phones. */
+.component-form {
+  max-width: 760px;
+}
+
+.component-form .form-actions {
+  margin-top: var(--space-24);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-16);
+}
+
+.form-field__textarea--code {
+  font-family: var(--font-mono);
+  font-size: 13px;
 }
 
 /* JSON details in the audit table: collapsed by default, readable when open. */
@@ -1502,6 +1528,10 @@ a.app-header__identity:hover {
 
   .kpi-grid,
   .chart-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .form-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 

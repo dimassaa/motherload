@@ -1,0 +1,422 @@
+<%
+  const isCreate = mode === 'create';
+  const fieldError = (name) => (fieldErrors && fieldErrors[name] ? fieldErrors[name] : null);
+  const valueOf = (name) =>
+    values[name] === undefined || values[name] === null ? '' : values[name];
+
+  // One aria-describedby value per field: the hint and the error must share the
+  // attribute, because a second attribute is ignored by screen readers.
+  const fieldAttrs = (name, { hintId = null, errorId }) => {
+    const hasError = Boolean(fieldError(name));
+    const describedBy = [hintId, hasError ? errorId : null].filter(Boolean).join(' ');
+    return [
+      hasError ? 'aria-invalid="true"' : null,
+      describedBy ? `aria-describedby="${describedBy}"` : null,
+    ]
+      .filter(Boolean)
+      .join(' ');
+  };
+%>
+<section aria-labelledby="component-form-title">
+  <div class="page-header">
+    <h1 id="component-form-title" class="page-header__title">
+      <%= isCreate ? 'Новая позиция' : values.name %>
+    </h1>
+    <a href="/admin/components">← К каталогу</a>
+  </div>
+
+  <%- include('../../../partials/form-errors', { errors }) %>
+
+  <form class="component-form" method="post" action="<%= formAction %>" novalidate>
+    <%- csrfField() %>
+
+    <div class="card-stack">
+      <section class="card form-panel" aria-labelledby="component-main-title">
+        <h2 id="component-main-title" class="card__title">Основное</h2>
+        <p class="card__text">
+          Идентификатор позиции и справочные сведения. SKU после создания не меняется.
+        </p>
+
+        <div class="form">
+          <div class="form-field">
+            <label class="form-field__label" for="component-sku">SKU</label>
+            <% if (isCreate) { %>
+              <input
+                class="form-field__input"
+                id="component-sku"
+                name="sku"
+                type="text"
+                required
+                autocapitalize="characters"
+                spellcheck="false"
+                placeholder="CPU-I7-12700"
+                value="<%= valueOf('sku') %>"
+                <%- fieldAttrs('sku', {
+                  hintId: 'component-sku-hint',
+                  errorId: 'component-sku-error',
+                }) %>
+              >
+            <% } else { %>
+              <input
+                class="form-field__input"
+                id="component-sku"
+                type="text"
+                readonly
+                value="<%= editing.sku %>"
+                aria-describedby="component-sku-hint"
+              >
+            <% } %>
+            <p class="form-field__hint" id="component-sku-hint">
+              <% if (isCreate) { %>
+                От 3 до 32 символов: заглавные латинские буквы, цифры и дефис. SKU — неизменяемый
+                идентификатор, после создания его нельзя изменить.
+              <% } else { %>
+                SKU — неизменяемый идентификатор. Чтобы сменить его, создайте новую позицию и
+                архивируйте эту.
+              <% } %>
+            </p>
+            <% if (fieldError('sku')) { %>
+              <p class="form-field__error" id="component-sku-error"><%= fieldError('sku') %></p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="component-name">Название</label>
+            <input
+              class="form-field__input"
+              id="component-name"
+              name="name"
+              type="text"
+              required
+              value="<%= valueOf('name') %>"
+              <%- fieldAttrs('name', { errorId: 'component-name-error' }) %>
+            >
+            <% if (fieldError('name')) { %>
+              <p class="form-field__error" id="component-name-error"><%= fieldError('name') %></p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="component-category">Категория</label>
+            <select
+              class="form-field__select"
+              id="component-category"
+              name="categoryId"
+              <%- fieldAttrs('categoryId', { errorId: 'component-category-error' }) %>
+            >
+              <option value="" <%- String(valueOf('categoryId')) === '' ? 'selected' : '' %>>
+                Не выбрана
+              </option>
+              <% for (const category of options.categories) { %>
+                <option
+                  value="<%= category.id %>"
+                  <%- String(valueOf('categoryId')) === String(category.id) ? 'selected' : '' %>
+                >
+                  <%= category.name %>
+                </option>
+              <% } %>
+            </select>
+            <% if (fieldError('categoryId')) { %>
+              <p class="form-field__error" id="component-category-error">
+                <%= fieldError('categoryId') %>
+              </p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="component-manufacturer">Производитель</label>
+            <select
+              class="form-field__select"
+              id="component-manufacturer"
+              name="manufacturerId"
+              <%- fieldAttrs('manufacturerId', { errorId: 'component-manufacturer-error' }) %>
+            >
+              <option value="" <%- String(valueOf('manufacturerId')) === '' ? 'selected' : '' %>>
+                Не выбран
+              </option>
+              <% for (const manufacturer of options.manufacturers) { %>
+                <option
+                  value="<%= manufacturer.id %>"
+                  <%- String(valueOf('manufacturerId')) === String(manufacturer.id) ? 'selected' : ''
+                  %>
+                >
+                  <%= manufacturer.name %>
+                </option>
+              <% } %>
+            </select>
+            <% if (fieldError('manufacturerId')) { %>
+              <p class="form-field__error" id="component-manufacturer-error">
+                <%= fieldError('manufacturerId') %>
+              </p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="component-supplier">Поставщик по умолчанию</label>
+            <select
+              class="form-field__select"
+              id="component-supplier"
+              name="defaultSupplierId"
+              <%- fieldAttrs('defaultSupplierId', {
+                hintId: 'component-supplier-hint',
+                errorId: 'component-supplier-error',
+              }) %>
+            >
+              <option value="" <%- String(valueOf('defaultSupplierId')) === '' ? 'selected' : '' %>>
+                Не выбран
+              </option>
+              <% for (const supplier of options.suppliers) { %>
+                <option
+                  value="<%= supplier.id %>"
+                  <%- String(valueOf('defaultSupplierId')) === String(supplier.id) ? 'selected' : ''
+                  %>
+                >
+                  <%= supplier.name %><% if (!supplier.isActive) { %> (неактивен)<% } %>
+                </option>
+              <% } %>
+            </select>
+            <p class="form-field__hint" id="component-supplier-hint">
+              Подставляется в приёмке по умолчанию. Необязательно.
+            </p>
+            <% if (fieldError('defaultSupplierId')) { %>
+              <p class="form-field__error" id="component-supplier-error">
+                <%= fieldError('defaultSupplierId') %>
+              </p>
+            <% } %>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="component-unit">Единица измерения</label>
+            <input
+              class="form-field__input"
+              id="component-unit"
+              name="unit"
+              type="text"
+              required
+              maxlength="20"
+              value="<%= valueOf('unit') %>"
+              <%- fieldAttrs('unit', { errorId: 'component-unit-error' }) %>
+            >
+            <% if (fieldError('unit')) { %>
+              <p class="form-field__error" id="component-unit-error"><%= fieldError('unit') %></p>
+            <% } %>
+          </div>
+        </div>
+      </section>
+
+      <section class="card form-panel" aria-labelledby="component-stock-title">
+        <h2 id="component-stock-title" class="card__title">Цены и запасы</h2>
+        <p class="card__text">
+          Пороги задаются на каждый склад отдельно, а не на суммарный остаток по всем складам.
+        </p>
+
+        <div class="form">
+          <div class="form-grid">
+            <div class="form-field">
+              <label class="form-field__label" for="component-purchase-price">
+                Закупочная цена
+              </label>
+              <input
+                class="form-field__input"
+                id="component-purchase-price"
+                name="purchasePrice"
+                type="text"
+                inputmode="decimal"
+                required
+                placeholder="850.00"
+                value="<%= valueOf('purchasePrice') %>"
+                <%- fieldAttrs('purchasePrice', {
+                  hintId: 'component-purchase-price-hint',
+                  errorId: 'component-purchase-price-error',
+                }) %>
+              >
+              <p class="form-field__hint" id="component-purchase-price-hint">
+                В BYN, без НДС. Например 850,00.
+              </p>
+              <% if (fieldError('purchasePrice')) { %>
+                <p class="form-field__error" id="component-purchase-price-error">
+                  <%= fieldError('purchasePrice') %>
+                </p>
+              <% } %>
+            </div>
+
+            <div class="form-field">
+              <label class="form-field__label" for="component-retail-price">Розничная цена</label>
+              <input
+                class="form-field__input"
+                id="component-retail-price"
+                name="retailPrice"
+                type="text"
+                inputmode="decimal"
+                required
+                placeholder="1099.90"
+                value="<%= valueOf('retailPrice') %>"
+                <%- fieldAttrs('retailPrice', {
+                  hintId: 'component-retail-price-hint',
+                  errorId: 'component-retail-price-error',
+                }) %>
+              >
+              <p class="form-field__hint" id="component-retail-price-hint">
+                В BYN, без НДС. Справочная цена продажи.
+              </p>
+              <% if (fieldError('retailPrice')) { %>
+                <p class="form-field__error" id="component-retail-price-error">
+                  <%= fieldError('retailPrice') %>
+                </p>
+              <% } %>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-field">
+              <label class="form-field__label" for="component-min-stock">Минимальный запас</label>
+              <input
+                class="form-field__input"
+                id="component-min-stock"
+                name="minStock"
+                type="number"
+                min="0"
+                step="1"
+                value="<%= valueOf('minStock') %>"
+                <%- fieldAttrs('minStock', {
+                  hintId: 'component-min-stock-hint',
+                  errorId: 'component-min-stock-error',
+                }) %>
+              >
+              <p class="form-field__hint" id="component-min-stock-hint">
+                На каждом складе. Ниже этого количества позиция считается дефицитной.
+              </p>
+              <% if (fieldError('minStock')) { %>
+                <p class="form-field__error" id="component-min-stock-error">
+                  <%= fieldError('minStock') %>
+                </p>
+              <% } %>
+            </div>
+
+            <div class="form-field">
+              <label class="form-field__label" for="component-max-stock">Максимальный запас</label>
+              <input
+                class="form-field__input"
+                id="component-max-stock"
+                name="maxStock"
+                type="number"
+                min="0"
+                step="1"
+                value="<%= valueOf('maxStock') %>"
+                <%- fieldAttrs('maxStock', {
+                  hintId: 'component-max-stock-hint',
+                  errorId: 'component-max-stock-error',
+                }) %>
+              >
+              <p class="form-field__hint" id="component-max-stock-hint">
+                На каждом складе. Не меньше минимального; пустое поле — без верхнего порога.
+              </p>
+              <% if (fieldError('maxStock')) { %>
+                <p class="form-field__error" id="component-max-stock-error">
+                  <%= fieldError('maxStock') %>
+                </p>
+              <% } %>
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label class="form-field__label" for="component-lead-time">Срок поставки, дней</label>
+            <input
+              class="form-field__input"
+              id="component-lead-time"
+              name="leadTimeDays"
+              type="number"
+              min="1"
+              step="1"
+              value="<%= valueOf('leadTimeDays') %>"
+              <%- fieldAttrs('leadTimeDays', {
+                hintId: 'component-lead-time-hint',
+                errorId: 'component-lead-time-error',
+              }) %>
+            >
+            <p class="form-field__hint" id="component-lead-time-hint">
+              Необязательно. Пустое поле — срок берётся у поставщика по умолчанию.
+            </p>
+            <% if (fieldError('leadTimeDays')) { %>
+              <p class="form-field__error" id="component-lead-time-error">
+                <%= fieldError('leadTimeDays') %>
+              </p>
+            <% } %>
+          </div>
+        </div>
+      </section>
+
+      <section class="card form-panel" aria-labelledby="component-specs-title">
+        <h2 id="component-specs-title" class="card__title">Характеристики</h2>
+        <p class="card__text">
+          Технические параметры в виде JSON-объекта с парами «ключ — значение». Массив или пустое
+          значение не подойдут.
+        </p>
+
+        <div class="form">
+          <div class="form-field">
+            <label class="form-field__label" for="component-specs">Характеристики (JSON)</label>
+            <textarea
+              class="form-field__textarea form-field__textarea--code"
+              id="component-specs"
+              name="specs"
+              rows="6"
+              spellcheck="false"
+              placeholder='{"socket": "LGA1700", "cores": 12}'
+              <%- fieldAttrs('specs', {
+                hintId: 'component-specs-hint',
+                errorId: 'component-specs-error',
+              }) %>
+            ><%= valueOf('specs') %></textarea>
+            <p class="form-field__hint" id="component-specs-hint">
+              Пример: {"socket": "LGA1700", "cores": 12}. Пустой объект {} означает «без
+              характеристик».
+            </p>
+            <% if (fieldError('specs')) { %>
+              <p class="form-field__error" id="component-specs-error"><%= fieldError('specs') %></p>
+            <% } %>
+          </div>
+        </div>
+      </section>
+
+      <section class="card form-panel" aria-labelledby="component-publication-title">
+        <h2 id="component-publication-title" class="card__title">Публикация</h2>
+        <p class="card__text">
+          Архивированная позиция остаётся в истории и отчётах, но новые документы с ней создать
+          нельзя.
+        </p>
+
+        <div class="form">
+          <div class="form-field">
+            <label class="form-field__label" for="component-status">Статус</label>
+            <select
+              class="form-field__select"
+              id="component-status"
+              name="isActive"
+              <%- fieldAttrs('isActive', { errorId: 'component-status-error' }) %>
+            >
+              <option value="true" <%- String(valueOf('isActive')) !== 'false' ? 'selected' : '' %>>
+                Опубликована
+              </option>
+              <option value="false" <%- String(valueOf('isActive')) === 'false' ? 'selected' : '' %>>
+                В архиве
+              </option>
+            </select>
+            <% if (fieldError('isActive')) { %>
+              <p class="form-field__error" id="component-status-error">
+                <%= fieldError('isActive') %>
+              </p>
+            <% } %>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn btn--primary" type="submit">
+        <%= isCreate ? 'Добавить позицию' : 'Сохранить изменения' %>
+      </button>
+      <a class="btn btn--ghost" href="/admin/components">Отмена</a>
+    </div>
+  </form>
+</section>
