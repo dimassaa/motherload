@@ -419,11 +419,10 @@ ol {
 
 .app-nav__list {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-4);
-  overflow-x: auto;
   list-style: none;
-  scrollbar-width: thin;
 }
 
 .app-nav__item {
@@ -446,8 +445,8 @@ ol {
   text-decoration: none;
 }
 
-/* The nav scrolls horizontally; an outside focus ring would be clipped by the
-   scroll container, so draw it inside the link. */
+/* The nav wraps instead of scrolling, so the inside offset keeps a focused
+   link from overlapping the row above and stays visible at the container edge. */
 .app-nav__link:focus-visible {
   outline-offset: -2px;
 }
@@ -1267,6 +1266,74 @@ ol {
   to {
     background-position: 0 50%;
   }
+}
+
+/* ------------------------------------------------- Admin and profile pages */
+
+/* Cards stacked with the standard gap; used by the profile and user forms so
+   each section stays a separate white card on the sage canvas. */
+.card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+}
+
+/* Forms read best when they do not stretch across the full 1280px canvas. */
+.form-panel {
+  max-width: 760px;
+}
+
+/* The description that introduces a card section needs breathing room before
+   the form or the error summary that follows it. */
+.card__text + .form,
+.card__text + .form-errors,
+.form-panel .form-errors + .form {
+  margin-top: var(--space-16);
+}
+
+/* GET filter forms (audit) pack fields into one row on desktop and stack them
+   on narrow screens without a second breakpoint rule. */
+.filter-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--space-16);
+  align-items: end;
+  margin-bottom: var(--space-24);
+  padding: var(--space-20);
+  border-radius: var(--radius-card);
+  background: var(--color-bone-white);
+  box-shadow: var(--shadow-hairline);
+}
+
+.filter-bar .form-field {
+  min-width: 0;
+}
+
+.filter-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+/* JSON details in the audit table: collapsed by default, readable when open. */
+.details-json summary {
+  color: var(--color-deep-fern);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.details-json pre {
+  max-width: 100%;
+  margin-top: var(--space-8);
+  padding: var(--space-12);
+  overflow-x: auto;
+  border-radius: var(--space-8);
+  background: var(--color-ash-gray);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* -------------------------------------------------------------- Responsive */

@@ -124,3 +124,65 @@ export async function countActiveAdmins() {
   );
   return rows[0].count;
 }
+
+/**
+ * Every account for the administration table. Ordered by name so the list is
+ * stable between renders and easy to scan.
+ */
+export async function listUsers() {
+  const { rows } = await query(`select ${PUBLIC_COLUMNS} from users order by full_name, id`);
+  return rows.map((row) => mapUser(row));
+}
+
+/**
+ * Apply the fields an administrator may change. Email is absent on purpose:
+ * it is the login identifier and the specification forbids changing it.
+ * @param {number} id
+ * @param {{ fullName: string, role: 'admin' | 'storekeeper' | 'analyst', phone: string | null }} input
+ */
+export async function updateUser(id, { fullName, role, phone }) {
+  const { rows } = await query(
+    `update users set full_name = $2, role = $3, phone = $4, updated_at = now()
+     where id = $1
+     returning ${PUBLIC_COLUMNS}`,
+    [id, fullName, role, phone],
+  );
+  return mapUser(rows[0]);
+}
+
+/**
+ * Apply the fields a user may change on their own profile. Role and email stay
+ * with the administrator; a user cannot promote themselves.
+ * @param {number} id
+ * @param {{ fullName: string, phone: string | null }} input
+ */
+export async function updateProfile(id, { fullName, phone }) {
+  const { rows } = await query(
+    `update users set full_name = $2, phone = $3, updated_at = now()
+     where id = $1
+     returning ${PUBLIC_COLUMNS}`,
+    [id, fullName, phone],
+  );
+  return mapUser(rows[0]);
+}
+
+/**
+ * Delete the stored sessions of a user, optionally sparing one session id.
+ *
+ * connect-pg-simple keeps the whole session payload in the `sess` JSON column,
+ * so the user is located there rather than by a dedicated column. The current
+ * session is spared when a user changes their own password: the spec requires
+ * that session to survive while every other device is signed out.
+ * @param {number} userId
+ * @param {{ exceptSid?: string | null }} [options]
+ * @returns {Promise<number>} number of deleted sessions
+ */
+export async function deleteSessionsForUser(userId, { exceptSid = null } = {}) {
+  const { rowCount } = await query(
+    `delete from sessions
+     where sess ->> 'userId' = $1
+       and ($2::text is null or sid <> $2)`,
+    [String(userId), exceptSid],
+  );
+  return rowCount;
+}

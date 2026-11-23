@@ -2,6 +2,32 @@
 
 Пока пусто. Некритичные находки добавляются сюда по мере работы.
 
+## 2026-11-23, Task 5 — RBAC, users, profile, audit
+
+- The “at least one active admin” guard reads `countActiveAdmins()` and then
+  updates in a separate statement. Two administrators deactivating or demoting
+  each other at the same instant could both pass the check and lock the screen.
+  The window is milliseconds wide and requires two cooperating admins, so the
+  fix (a transaction with `FOR UPDATE` on the admin rows) is deferred rather
+  than silently widening this task.
+- Mutations write the audit row after the data change, without a shared
+  transaction. A failure between the two leaves the change unaudited; stock
+  documents already use transactions for this reason. Admin actions are
+  low-frequency and the failure needs a database error at the wrong moment, so
+  the transaction wrapper is left for the stage that introduces a shared
+  mutation helper.
+- `GET /login` returns 404: only `POST /login` is routed. A user who types the
+  address or follows an old bookmark sees the not-found page. Task 4 owns the
+  auth routes; a redirect to `/` would be the natural fix.
+- 400/403/404 responses still use the Task 4 bootstrap HTML without the app
+  layout. Task 6 replaces it with the shared error views; the status codes and
+  Russian messages from this task already flow through that middleware.
+- The navigation bar wraps to a second row for administrators at 1280–1439 px,
+  because ten links plus the identity block no longer fit. All links stay
+  visible instead of being clipped by the previous horizontal scroll, but the
+  header is taller on those widths. A compact admin menu can be considered once
+  the remaining sections add their own navigation entries.
+
 ## 2026-11-22, Task 4 — auth session and rate-limit notes
 
 - Rate-limit counters live in process memory. The spec deploys one application
