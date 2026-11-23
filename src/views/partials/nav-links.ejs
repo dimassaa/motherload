@@ -4,11 +4,12 @@
   const allLinks = [
     { href: '/dashboard', label: 'Обзор', roles: ['admin', 'storekeeper', 'analyst'] },
     { href: '/components', label: 'Комплектующие', roles: ['admin', 'storekeeper', 'analyst'] },
-    { href: '/stock', label: 'Остатки', roles: ['admin', 'storekeeper', 'analyst'] },
+    // Stock documents are admin/storekeeper only; analysts keep the catalog
+    // link instead of a stock link that would immediately answer 403.
+    { href: '/stock', label: 'Остатки', roles: ['admin', 'storekeeper'] },
     { href: '/inventory', label: 'Инвентаризация', roles: ['admin', 'storekeeper'] },
-    { href: '/analytics', label: 'Аналитика', roles: ['admin', 'storekeeper', 'analyst'] },
-    { href: '/alerts', label: 'Тревоги', roles: ['admin', 'storekeeper', 'analyst'] },
-    { href: '/reports', label: 'Отчёты', roles: ['admin', 'analyst'] },
+    // Analytics, alerts and reports appear here only when their routes land;
+    // a navigation link must never advertise a page the server does not have.
     { href: '/admin/users', label: 'Пользователи', roles: ['admin'] },
     { href: '/admin/directories', label: 'Справочники', roles: ['admin'] },
     { href: '/admin/components', label: 'Позиции каталога', roles: ['admin'] },
@@ -30,12 +31,8 @@
         class="<%= linkClass %>"
         href="<%= link.href %>"
         <%- isActive(link.href) ? 'aria-current="page"' : '' %>
-        <%- link.href === '/alerts' && alertCount > 0 ? `aria-label="Тревоги, ${alertCount} открытых"` : '' %>
       >
         <%= link.label %>
-        <% if (link.href === '/alerts') { %>
-          <span class="app-nav__badge" aria-hidden="true"><%= alertCount %></span>
-        <% } %>
       </a>
     </li>
   <% } %>

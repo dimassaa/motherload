@@ -1,0 +1,190 @@
+<%
+  const isTransfer = type === 'transfer';
+  const isReceipt = type === 'receipt';
+  const hasAllocations = !isReceipt && lines.some((line) => line.allocations.length > 0);
+%>
+<section class="stock-document" aria-labelledby="stock-document-title">
+  <div class="page-header">
+    <div>
+      <p class="axis-label"><a href="<%= meta.listPath %>">← К списку: <%= meta.plural %></a></p>
+      <h1 id="stock-document-title" class="page-header__title">
+        <span class="table__cell--code"><%= document.number %></span>
+      </h1>
+      <p class="page-header__meta">
+        <%= meta.label %> · документ проведён, редактирование не предусмотрено
+      </p>
+    </div>
+    <%- include('../../partials/status-chip', { status: 'posted' }) %>
+  </div>
+
+  <div class="card-stack">
+    <section class="card" aria-labelledby="stock-document-main-title">
+      <h2 id="stock-document-main-title" class="card__title">Реквизиты</h2>
+      <div class="detail-grid">
+        <div class="detail-item">
+          <span class="detail-item__label">Дата документа</span>
+          <span class="detail-item__value"><%= formatDate(document.docDate) %></span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-item__label">Проведён</span>
+          <span class="detail-item__value"><%= formatDateTime(document.createdAt) %></span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-item__label">Автор</span>
+          <span class="detail-item__value"><%= document.authorName ?? '—' %></span>
+        </div>
+
+        <% if (isReceipt) { %>
+          <div class="detail-item">
+            <span class="detail-item__label">Поставщик</span>
+            <span class="detail-item__value"><%= document.supplierName ?? '—' %></span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-item__label">Склад</span>
+            <span class="detail-item__value">
+              <%= document.warehouseName ?? '—' %>
+              <% if (document.warehouseCity) { %>
+                <span class="table__cell--muted">· <%= document.warehouseCity %></span>
+              <% } %>
+            </span>
+          </div>
+        <% } %>
+
+        <% if (type === 'issue') { %>
+          <div class="detail-item">
+            <span class="detail-item__label">Склад</span>
+            <span class="detail-item__value">
+              <%= document.warehouseName ?? '—' %>
+              <% if (document.warehouseCity) { %>
+                <span class="table__cell--muted">· <%= document.warehouseCity %></span>
+              <% } %>
+            </span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-item__label">Причина</span>
+            <span class="detail-item__value"><%= reasonLabel ?? '—' %></span>
+          </div>
+        <% } %>
+
+        <% if (isTransfer) { %>
+          <div class="detail-item">
+            <span class="detail-item__label">Откуда</span>
+            <span class="detail-item__value">
+              <%= document.fromWarehouseName ?? '—' %>
+              <% if (document.fromWarehouseCity) { %>
+                <span class="table__cell--muted">· <%= document.fromWarehouseCity %></span>
+              <% } %>
+            </span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-item__label">Куда</span>
+            <span class="detail-item__value">
+              <%= document.toWarehouseName ?? '—' %>
+              <% if (document.toWarehouseCity) { %>
+                <span class="table__cell--muted">· <%= document.toWarehouseCity %></span>
+              <% } %>
+            </span>
+          </div>
+        <% } %>
+      </div>
+
+      <% if (document.comment) { %>
+        <p class="stock-document__comment">
+          <span class="detail-item__label">Комментарий</span>
+          <%= document.comment %>
+        </p>
+      <% } %>
+    </section>
+
+    <div class="card-grid">
+      <section class="card" aria-labelledby="stock-document-lines-count-title">
+        <h2 id="stock-document-lines-count-title" class="card__title">Позиций</h2>
+        <p class="stat-value"><%= formatQty(lines.length) %></p>
+      </section>
+      <section class="card" aria-labelledby="stock-document-qty-title">
+        <h2 id="stock-document-qty-title" class="card__title">Количество</h2>
+        <p class="stat-value"><%= formatQty(totalQty) %></p>
+      </section>
+      <section class="card" aria-labelledby="stock-document-total-title">
+        <h2 id="stock-document-total-title" class="card__title">
+          <%= isReceipt ? 'Сумма приёмки' : 'Себестоимость' %>
+        </h2>
+        <p class="stat-value"><%- money(document.totalCost) %></p>
+      </section>
+    </div>
+
+    <section class="card" aria-labelledby="stock-document-lines-title">
+      <h2 id="stock-document-lines-title" class="card__title">Строки документа</h2>
+
+      <% if (lines.length === 0) { %>
+        <%- include('../../partials/empty-state', {
+          title: 'Строк нет',
+          text: 'Документ не содержит позиций. Это возможно только для повреждённых данных.',
+        }) %>
+      <% } else { %>
+        <div class="table-wrap">
+          <table class="table stock-document__lines">
+            <thead class="table__head">
+              <tr>
+                <th class="table__heading table__cell--num" scope="col">№</th>
+                <th class="table__heading" scope="col">SKU</th>
+                <th class="table__heading" scope="col">Позиция</th>
+                <th class="table__heading table__cell--num" scope="col">Количество</th>
+                <th class="table__heading" scope="col">Ед.</th>
+                <th class="table__heading table__cell--num" scope="col">
+                  <%= isReceipt ? 'Цена за единицу' : 'Себестоимость' %>
+                </th>
+                <th class="table__heading table__cell--num" scope="col">Сумма</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% for (const [index, line] of lines.entries()) { %>
+                <tr class="table__row">
+                  <td class="table__cell table__cell--num"><%= index + 1 %></td>
+                  <td class="table__cell table__cell--code"><%= line.sku %></td>
+                  <td class="table__cell"><%= line.name %></td>
+                  <td class="table__cell table__cell--num"><%= formatQty(line.qty) %></td>
+                  <td class="table__cell"><%= line.unit %></td>
+                  <td class="table__cell table__cell--num"><%- money(line.unitCost) %></td>
+                  <td class="table__cell table__cell--num"><%- money(line.totalCost) %></td>
+                </tr>
+
+                <% if (hasAllocations && line.allocations.length > 0) { %>
+                  <tr class="stock-document__allocations-row">
+                    <td class="table__cell" colspan="7">
+                      <p class="stock-document__allocations-title">Партии списания</p>
+                      <ul class="stock-document__allocations">
+                        <% for (const allocation of line.allocations) { %>
+                          <li class="stock-document__allocation">
+                            <span class="table__cell--code">Партия №<%= allocation.batchId %></span>
+                            <span>
+                              приход <%= formatDate(allocation.receivedAt) %>
+                              <span class="table__cell--muted">
+                                · <%= allocation.documentNo ?? 'без документа' %>
+                              </span>
+                            </span>
+                            <span>
+                              <%= formatQty(allocation.qty) %> шт. ×
+                              <%- money(allocation.unitCost) %>
+                            </span>
+                          </li>
+                        <% } %>
+                      </ul>
+                    </td>
+                  </tr>
+                <% } %>
+              <% } %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+    </section>
+
+    <% if (isTransfer) { %>
+      <p class="form-field__hint">
+        Себестоимость при перемещении не меняется: каждая партия создана на складе-назначении с
+        той же ценой, что была на источнике.
+      </p>
+    <% } %>
+  </div>
+</section>

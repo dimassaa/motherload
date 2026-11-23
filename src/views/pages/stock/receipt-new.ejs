@@ -1,0 +1,131 @@
+<%
+  const fieldError = (name) => (fieldErrors && fieldErrors[name] ? fieldErrors[name] : null);
+  const describedBy = (name, errorId) =>
+    fieldError(name) ? `aria-invalid="true" aria-describedby="${errorId}"` : '';
+%>
+<section class="stock-form-page" aria-labelledby="receipt-new-title">
+  <div class="page-header">
+    <div>
+      <p class="axis-label"><a href="/stock/receipts">← К приёмкам</a></p>
+      <h1 id="receipt-new-title" class="page-header__title">Новая приёмка</h1>
+      <p class="page-header__meta">
+        Номер вида ПР-ГГГГ-NNNN присвоится при проведении. Документ проводится сразу и не
+        редактируется: ошибку исправляют обратной операцией с комментарием.
+      </p>
+    </div>
+  </div>
+
+  <%- include('../../partials/form-errors', { errors }) %>
+
+  <form class="card stock-form" method="post" action="/stock/receipts" data-stock-form>
+    <%- csrfField() %>
+
+    <h2 class="card__title">Поставка</h2>
+    <p class="card__text">
+      Поставщик и склад должны быть активны. Позиции попадают на склад отдельными партиями по
+      указанной цене — именно их потом списывает FIFO.
+    </p>
+
+    <div class="form form-grid">
+      <div class="form-field">
+        <label class="form-field__label" for="receipt-supplier">Поставщик</label>
+        <select
+          class="form-field__select"
+          id="receipt-supplier"
+          name="supplierId"
+          required
+          <%- describedBy('supplierId', 'receipt-supplier-error') %>
+        >
+          <option value="">Выберите поставщика</option>
+          <% for (const supplier of suppliers) { %>
+            <option
+              value="<%= supplier.id %>"
+              <%- String(values.supplierId) === String(supplier.id) ? 'selected' : '' %>
+            >
+              <%= supplier.name %><%= supplier.isActive ? '' : ' (неактивен)' %>
+            </option>
+          <% } %>
+        </select>
+        <% if (fieldError('supplierId')) { %>
+          <p class="form-field__error" id="receipt-supplier-error"><%= fieldError('supplierId') %></p>
+        <% } %>
+      </div>
+
+      <div class="form-field">
+        <label class="form-field__label" for="receipt-warehouse">Склад</label>
+        <select
+          class="form-field__select"
+          id="receipt-warehouse"
+          name="warehouseId"
+          required
+          <%- describedBy('warehouseId', 'receipt-warehouse-error') %>
+        >
+          <option value="">Выберите склад</option>
+          <% for (const warehouse of warehouses) { %>
+            <option
+              value="<%= warehouse.id %>"
+              <%- String(values.warehouseId) === String(warehouse.id) ? 'selected' : '' %>
+            >
+              <%= warehouse.name %> · <%= warehouse.city %>
+            </option>
+          <% } %>
+        </select>
+        <% if (fieldError('warehouseId')) { %>
+          <p class="form-field__error" id="receipt-warehouse-error"><%= fieldError('warehouseId') %></p>
+        <% } %>
+      </div>
+
+      <div class="form-field">
+        <label class="form-field__label" for="receipt-date">Дата документа</label>
+        <input
+          class="form-field__input"
+          id="receipt-date"
+          name="docDate"
+          type="date"
+          required
+          value="<%= values.docDate %>"
+          <%- describedBy('docDate', 'receipt-date-error') %>
+        >
+        <% if (fieldError('docDate')) { %>
+          <p class="form-field__error" id="receipt-date-error"><%= fieldError('docDate') %></p>
+        <% } %>
+      </div>
+
+      <div class="form-field form-field--wide">
+        <label class="form-field__label" for="receipt-comment">Комментарий</label>
+        <textarea
+          class="form-field__textarea"
+          id="receipt-comment"
+          name="comment"
+          rows="2"
+          maxlength="500"
+          placeholder="Например: накладная № 145, поставка по договору"
+          <%- describedBy('comment', 'receipt-comment-error') %>
+        ><%= values.comment %></textarea>
+        <% if (fieldError('comment')) { %>
+          <p class="form-field__error" id="receipt-comment-error"><%= fieldError('comment') %></p>
+        <% } %>
+      </div>
+    </div>
+
+    <h2 class="card__title stock-form__section-title">Строки приёмки</h2>
+    <%- include('../../partials/stock-lines', {
+      rows: values.rows,
+      components,
+      withCost: true,
+    }) %>
+
+    <p class="stock-total">
+      <span class="stock-total__label">Итого по документу</span>
+      <span class="stock-total__value" data-receipt-total>0,00</span>
+      <i class="nbrb-icon" aria-hidden="true">BYN</i>
+    </p>
+
+    <div class="form-actions">
+      <button class="btn btn--primary" type="submit">Провести приёмку</button>
+      <a class="btn btn--ghost" href="/stock/receipts">Отмена</a>
+    </div>
+  </form>
+</section>
+
+<script type="module" src="/js/receipt-form.js"></script>

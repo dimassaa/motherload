@@ -56,6 +56,23 @@ real input problem. Deferred minor: the 409 is still true and actionable, and
 reordering only decides which error wins. Revisit when the receipt form (Task 14)
 defines the precedence it wants to show.
 
+## 2026-11-23, Task 14 — stock operation screens
+
+- The navigation audit found `/analytics`, `/alerts` and `/reports` had no routes
+  yet. They are hidden from `nav-links.ejs` until their tasks land; a visible
+  link must never advertise a 404.
+- Receipt rows with the same component are deliberately accepted, matching
+  `postReceipt`. The form does not merge them. The Task 11 note asked for a
+  decision here: changing the service contract is out of Task 14's scope, and
+  rejecting duplicates would contradict the approved brief. If duplicate batches
+  per receipt become a real accounting problem, merge rows client-side in a
+  dedicated change.
+- The component type-ahead exposes `role="combobox"`/`listbox` and keyboard
+  navigation but does not set `aria-activedescendant` while moving through the
+  options. A screen reader still has the native `<select>` fallback before the
+  module runs; the active-descendant refinement is deferred as a non-critical
+  accessibility improvement.
+
 ## 2026-11-23, Task 11 — duplicate component lines produce duplicate batches
 
 `postReceipt` accepts the same `componentId` twice in one document and creates a

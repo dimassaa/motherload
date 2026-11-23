@@ -1,0 +1,159 @@
+<%
+  const fieldError = (name) => (fieldErrors && fieldErrors[name] ? fieldErrors[name] : null);
+  const describedBy = (name, errorId) =>
+    fieldError(name) ? `aria-invalid="true" aria-describedby="${errorId}"` : '';
+%>
+<section class="stock-form-page" aria-labelledby="issue-new-title">
+  <div class="page-header">
+    <div>
+      <p class="axis-label"><a href="/stock/issues">← К расходам</a></p>
+      <h1 id="issue-new-title" class="page-header__title">Новый расход</h1>
+      <p class="page-header__meta">
+        Номер вида РС-ГГГГ-NNNN присвоится при проведении. Себестоимость определяется партиями по
+        FIFO и фиксируется в документе.
+      </p>
+    </div>
+  </div>
+
+  <%- include('../../partials/form-errors', { errors }) %>
+
+  <form
+    class="card stock-form"
+    method="post"
+    action="/stock/issues"
+    data-stock-form
+    data-fifo-preview
+    data-fifo-preview-url="/api/fifo-preview"
+  >
+    <%- csrfField() %>
+
+    <h2 class="card__title">Основание расхода</h2>
+    <p class="card__text">
+      Позиции списываются по FIFO: первыми уходят партии с самой ранней датой приёмки. Если
+      остатка не хватает, документ не проводится и остатки не меняются.
+    </p>
+
+    <div class="form form-grid">
+      <div class="form-field">
+        <label class="form-field__label" for="issue-warehouse">Склад</label>
+        <select
+          class="form-field__select"
+          id="issue-warehouse"
+          name="warehouseId"
+          required
+          data-preview-warehouse
+          <%- describedBy('warehouseId', 'issue-warehouse-error') %>
+        >
+          <option value="">Выберите склад</option>
+          <% for (const warehouse of warehouses) { %>
+            <option
+              value="<%= warehouse.id %>"
+              <%- String(values.warehouseId) === String(warehouse.id) ? 'selected' : '' %>
+            >
+              <%= warehouse.name %> · <%= warehouse.city %>
+            </option>
+          <% } %>
+        </select>
+        <% if (fieldError('warehouseId')) { %>
+          <p class="form-field__error" id="issue-warehouse-error"><%= fieldError('warehouseId') %></p>
+        <% } %>
+      </div>
+
+      <div class="form-field">
+        <label class="form-field__label" for="issue-date">Дата документа</label>
+        <input
+          class="form-field__input"
+          id="issue-date"
+          name="docDate"
+          type="date"
+          required
+          value="<%= values.docDate %>"
+          <%- describedBy('docDate', 'issue-date-error') %>
+        >
+        <% if (fieldError('docDate')) { %>
+          <p class="form-field__error" id="issue-date-error"><%= fieldError('docDate') %></p>
+        <% } %>
+      </div>
+
+      <div class="form-field">
+        <label class="form-field__label" for="issue-reason">Причина</label>
+        <select
+          class="form-field__select"
+          id="issue-reason"
+          name="reason"
+          required
+          <%- describedBy('reason', 'issue-reason-error') %>
+        >
+          <% for (const reason of reasons) { %>
+            <option
+              value="<%= reason.value %>"
+              <%- values.reason === reason.value ? 'selected' : '' %>
+            >
+              <%= reason.label %>
+            </option>
+          <% } %>
+        </select>
+        <% if (fieldError('reason')) { %>
+          <p class="form-field__error" id="issue-reason-error"><%= fieldError('reason') %></p>
+        <% } %>
+      </div>
+
+      <div class="form-field form-field--wide">
+        <label class="form-field__label" for="issue-comment">Комментарий</label>
+        <textarea
+          class="form-field__textarea"
+          id="issue-comment"
+          name="comment"
+          rows="2"
+          maxlength="500"
+          placeholder="Например: продажа по счёту № 208"
+          <%- describedBy('comment', 'issue-comment-error') %>
+        ><%= values.comment %></textarea>
+        <% if (fieldError('comment')) { %>
+          <p class="form-field__error" id="issue-comment-error"><%= fieldError('comment') %></p>
+        <% } %>
+      </div>
+    </div>
+
+    <h2 class="card__title stock-form__section-title">Строки расхода</h2>
+    <%- include('../../partials/stock-lines', {
+      rows: values.rows,
+      components,
+      withCost: false,
+    }) %>
+
+    <section class="stock-preview" data-preview-panel aria-labelledby="issue-preview-title">
+      <div class="section__title">
+        <h2 class="card__title" id="issue-preview-title">Предпросмотр списания</h2>
+      </div>
+      <p class="card__text" data-preview-hint>
+        Выберите склад, позиции и количества — здесь появятся партии, которые спишет FIFO, и
+        итоговая себестоимость. Предпросмотр ничего не меняет.
+      </p>
+
+      <div class="stock-preview__skeleton" data-preview-skeleton hidden aria-hidden="true">
+        <span class="skeleton stock-preview__skeleton-line"></span>
+        <span class="skeleton stock-preview__skeleton-line"></span>
+        <span class="skeleton stock-preview__skeleton-line"></span>
+      </div>
+
+      <div data-preview-result hidden>
+        <p class="stock-preview__total">
+          Себестоимость:
+          <span data-preview-total>0,00</span>
+          <i class="nbrb-icon" aria-hidden="true">BYN</i>
+        </p>
+        <div data-preview-lines></div>
+      </div>
+
+      <p class="form-field__error" data-preview-error role="alert" hidden></p>
+    </section>
+
+    <div class="form-actions">
+      <button class="btn btn--primary" type="submit">Списать со склада</button>
+      <a class="btn btn--ghost" href="/stock/issues">Отмена</a>
+    </div>
+  </form>
+</section>
+
+<script type="module" src="/js/issue-form.js"></script>

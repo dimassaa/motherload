@@ -1,0 +1,172 @@
+<%
+  const fieldError = (name) => (fieldErrors && fieldErrors[name] ? fieldErrors[name] : null);
+  const describedBy = (name, errorId) =>
+    fieldError(name) ? `aria-invalid="true" aria-describedby="${errorId}"` : '';
+  // The destination field has two possible explanations: the server-side field
+  // error and the client-side same-warehouse guard. Both ids travel in one
+  // aria-describedby; the module restores this base value when the guard clears.
+  const toDescribedBy = `transfer-same-error${fieldError('toWarehouseId') ? ' transfer-to-error' : ''}`;
+%>
+<section class="stock-form-page" aria-labelledby="transfer-new-title">
+  <div class="page-header">
+    <div>
+      <p class="axis-label"><a href="/stock/transfers">← К перемещениям</a></p>
+      <h1 id="transfer-new-title" class="page-header__title">Новое перемещение</h1>
+      <p class="page-header__meta">
+        Номер вида ПМ-ГГГГ-NNNN присвоится при проведении. Себестоимость партий не меняется:
+        каждая партия переезжает на склад-назначение с той же ценой.
+      </p>
+    </div>
+  </div>
+
+  <%- include('../../partials/form-errors', { errors }) %>
+
+  <form
+    class="card stock-form"
+    method="post"
+    action="/stock/transfers"
+    data-stock-form
+    data-fifo-preview
+    data-fifo-preview-url="/api/fifo-preview"
+    data-same-warehouse-message="Склад-источник и склад-назначение должны различаться."
+  >
+    <%- csrfField() %>
+
+    <h2 class="card__title">Маршрут</h2>
+    <p class="card__text">
+      Источник и назначение должны различаться. Если на любом из складов идёт инвентаризация,
+      перемещение отклонится, пока её не завершат.
+    </p>
+
+    <div class="form form-grid">
+      <div class="form-field">
+        <label class="form-field__label" for="transfer-from">Откуда</label>
+        <select
+          class="form-field__select"
+          id="transfer-from"
+          name="fromWarehouseId"
+          required
+          data-preview-warehouse
+          data-from-warehouse
+          <%- describedBy('fromWarehouseId', 'transfer-from-error') %>
+        >
+          <option value="">Выберите склад-источник</option>
+          <% for (const warehouse of warehouses) { %>
+            <option
+              value="<%= warehouse.id %>"
+              <%- String(values.fromWarehouseId) === String(warehouse.id) ? 'selected' : '' %>
+            >
+              <%= warehouse.name %> · <%= warehouse.city %>
+            </option>
+          <% } %>
+        </select>
+        <% if (fieldError('fromWarehouseId')) { %>
+          <p class="form-field__error" id="transfer-from-error">
+            <%= fieldError('fromWarehouseId') %>
+          </p>
+        <% } %>
+      </div>
+
+      <div class="form-field">
+        <label class="form-field__label" for="transfer-to">Куда</label>
+        <select
+          class="form-field__select"
+          id="transfer-to"
+          name="toWarehouseId"
+          required
+          data-to-warehouse
+          data-base-describedby="<%= toDescribedBy %>"
+          aria-describedby="<%= toDescribedBy %>"
+          <%- fieldError('toWarehouseId') ? 'aria-invalid="true"' : '' %>
+        >
+          <option value="">Выберите склад-назначение</option>
+          <% for (const warehouse of warehouses) { %>
+            <option
+              value="<%= warehouse.id %>"
+              <%- String(values.toWarehouseId) === String(warehouse.id) ? 'selected' : '' %>
+            >
+              <%= warehouse.name %> · <%= warehouse.city %>
+            </option>
+          <% } %>
+        </select>
+        <p class="form-field__error" id="transfer-same-error" data-same-warehouse-error hidden></p>
+        <% if (fieldError('toWarehouseId')) { %>
+          <p class="form-field__error" id="transfer-to-error"><%= fieldError('toWarehouseId') %></p>
+        <% } %>
+      </div>
+
+      <div class="form-field">
+        <label class="form-field__label" for="transfer-date">Дата документа</label>
+        <input
+          class="form-field__input"
+          id="transfer-date"
+          name="docDate"
+          type="date"
+          required
+          value="<%= values.docDate %>"
+          <%- describedBy('docDate', 'transfer-date-error') %>
+        >
+        <% if (fieldError('docDate')) { %>
+          <p class="form-field__error" id="transfer-date-error"><%= fieldError('docDate') %></p>
+        <% } %>
+      </div>
+
+      <div class="form-field form-field--wide">
+        <label class="form-field__label" for="transfer-comment">Комментарий</label>
+        <textarea
+          class="form-field__textarea"
+          id="transfer-comment"
+          name="comment"
+          rows="2"
+          maxlength="500"
+          placeholder="Например: пополнение регионального склада"
+          <%- describedBy('comment', 'transfer-comment-error') %>
+        ><%= values.comment %></textarea>
+        <% if (fieldError('comment')) { %>
+          <p class="form-field__error" id="transfer-comment-error"><%= fieldError('comment') %></p>
+        <% } %>
+      </div>
+    </div>
+
+    <h2 class="card__title stock-form__section-title">Строки перемещения</h2>
+    <%- include('../../partials/stock-lines', {
+      rows: values.rows,
+      components,
+      withCost: false,
+    }) %>
+
+    <section class="stock-preview" data-preview-panel aria-labelledby="transfer-preview-title">
+      <div class="section__title">
+        <h2 class="card__title" id="transfer-preview-title">Себестоимость перемещения</h2>
+      </div>
+      <p class="card__text" data-preview-hint>
+        Выберите склад-источник, позиции и количества — здесь появятся партии, которые уйдут со
+        склада, и итоговая себестоимость. Предпросмотр ничего не меняет.
+      </p>
+
+      <div class="stock-preview__skeleton" data-preview-skeleton hidden aria-hidden="true">
+        <span class="skeleton stock-preview__skeleton-line"></span>
+        <span class="skeleton stock-preview__skeleton-line"></span>
+        <span class="skeleton stock-preview__skeleton-line"></span>
+      </div>
+
+      <div data-preview-result hidden>
+        <p class="stock-preview__total">
+          Себестоимость:
+          <span data-preview-total>0,00</span>
+          <i class="nbrb-icon" aria-hidden="true">BYN</i>
+        </p>
+        <div data-preview-lines></div>
+      </div>
+
+      <p class="form-field__error" data-preview-error role="alert" hidden></p>
+    </section>
+
+    <div class="form-actions">
+      <button class="btn btn--primary" type="submit">Провести перемещение</button>
+      <a class="btn btn--ghost" href="/stock/transfers">Отмена</a>
+    </div>
+  </form>
+</section>
+
+<script type="module" src="/js/transfer-form.js"></script>
