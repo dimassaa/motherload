@@ -17,14 +17,15 @@
     { href: '/stock', label: 'Остатки', roles: ['admin', 'storekeeper'] },
     { href: '/inventory', label: 'Инвентаризация', roles: ['admin', 'storekeeper'] },
     // Alerts are read by every role; the badge is the unresolved count computed
-    // in locals.js for authenticated users only. Reports stay hidden until their
-    // route lands: a navigation link must never advertise a 404.
+    // in locals.js for authenticated users only. Reports are a read-only export
+    // hub for every role; the audit card inside is admin-only.
     {
       href: '/alerts',
       label: 'Алерты',
       roles: ['admin', 'storekeeper', 'analyst'],
       badge: typeof openAlertsCount !== 'undefined' ? openAlertsCount : 0,
     },
+    { href: '/reports', label: 'Отчёты', roles: ['admin', 'storekeeper', 'analyst'] },
     { href: '/admin/users', label: 'Пользователи', roles: ['admin'] },
     { href: '/admin/directories', label: 'Справочники', roles: ['admin'] },
     { href: '/admin/components', label: 'Позиции каталога', roles: ['admin'] },

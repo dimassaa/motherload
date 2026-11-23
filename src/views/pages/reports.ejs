@@ -1,0 +1,153 @@
+<section aria-labelledby="reports-title">
+  <div class="page-header">
+    <div>
+      <p class="axis-label">
+        <span>[ Отчёты ]</span>
+        <span>Экспорт данных</span>
+      </p>
+      <h1 id="reports-title" class="page-header__title">Отчёты</h1>
+      <p class="page-header__meta">
+        CSV для Excel · UTF-8 · разделитель «;» · десятичная запятая
+      </p>
+    </div>
+  </div>
+
+  <p class="card__text">
+    Каждый файл содержит актуальные данные на момент выгрузки. Деньги указаны в BYN,
+    даты — в формате дд.мм.гггг, количество — с пробелом между тысячами. Каждая
+    выгрузка фиксируется в аудите.
+  </p>
+
+  <div class="card-grid report-grid">
+    <section class="card report-card" aria-labelledby="report-stock-title">
+      <h2 id="report-stock-title" class="card__title">Остатки по каталогу</h2>
+      <p class="card__text">
+        Текущий остаток по каждой позиции. Экспорт на странице каталога сохраняет
+        поиск, категорию, производителя, склад, статус и сортировку.
+      </p>
+      <div class="card-actions">
+        <a class="btn btn--outline btn--sm" href="/reports/export/stock">Скачать CSV</a>
+      </div>
+    </section>
+
+    <section class="card report-card" aria-labelledby="report-movements-title">
+      <h2 id="report-movements-title" class="card__title">Движения за период</h2>
+      <p class="card__text">
+        Приёмки, расходы, перемещения и корректировки. По умолчанию — последние 30 дней.
+      </p>
+      <form
+        class="report-card__form"
+        method="get"
+        action="/reports/export/movements"
+        aria-label="Период движений"
+      >
+        <div class="form-field">
+          <label class="form-field__label" for="movements-from">С даты</label>
+          <input
+            class="form-field__input"
+            id="movements-from"
+            name="dateFrom"
+            type="date"
+            value="<%= movementRange.dateFrom %>"
+            required
+          >
+        </div>
+        <div class="form-field">
+          <label class="form-field__label" for="movements-to">По дату</label>
+          <input
+            class="form-field__input"
+            id="movements-to"
+            name="dateTo"
+            type="date"
+            value="<%= movementRange.dateTo %>"
+            required
+          >
+        </div>
+        <div class="card-actions">
+          <button class="btn btn--outline btn--sm" type="submit">Скачать CSV</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card report-card" aria-labelledby="report-abc-title">
+      <h2 id="report-abc-title" class="card__title">ABC-анализ</h2>
+      <p class="card__text">
+        Ранжирование по стоимости запаса, доля и накопленная доля каждой позиции.
+      </p>
+      <div class="card-actions">
+        <a class="btn btn--outline btn--sm" href="/reports/export/abc">Скачать CSV</a>
+      </div>
+    </section>
+
+    <section class="card report-card" aria-labelledby="report-xyz-title">
+      <h2 id="report-xyz-title" class="card__title">XYZ-анализ</h2>
+      <p class="card__text">
+        Расход по шести полным месяцам, коэффициент вариации и класс спроса.
+      </p>
+      <div class="card-actions">
+        <a class="btn btn--outline btn--sm" href="/reports/export/xyz">Скачать CSV</a>
+      </div>
+    </section>
+
+    <section class="card report-card" aria-labelledby="report-reorder-title">
+      <h2 id="report-reorder-title" class="card__title">Точка заказа</h2>
+      <p class="card__text">
+        Средний расход, страховой запас, ROP, EOQ и рекомендуемое количество к заказу.
+      </p>
+      <div class="card-actions">
+        <a class="btn btn--outline btn--sm" href="/reports/export/reorder">Скачать CSV</a>
+      </div>
+    </section>
+
+    <section class="card report-card" aria-labelledby="report-inventory-title">
+      <h2 id="report-inventory-title" class="card__title">Акт инвентаризации</h2>
+      <p class="card__text">
+        Учётное и фактическое количество по строкам одной инвентаризации, разница и
+        комментарии.
+      </p>
+      <form
+        class="report-card__form"
+        method="get"
+        action="/reports/export/inventory"
+        aria-label="Экспорт акта инвентаризации"
+      >
+        <div class="form-field">
+          <label class="form-field__label" for="inventory-count-id">Номер инвентаризации</label>
+          <input
+            class="form-field__input"
+            id="inventory-count-id"
+            name="countId"
+            type="number"
+            min="1"
+            step="1"
+            inputmode="numeric"
+            required
+          >
+          <p class="form-field__hint">Номер указан в адресе карточки инвентаризации.</p>
+        </div>
+        <div class="card-actions">
+          <button class="btn btn--outline btn--sm" type="submit">Скачать CSV</button>
+        </div>
+      </form>
+    </section>
+
+    <% if (isAdmin) { %>
+      <section class="card report-card" aria-labelledby="report-audit-title">
+        <h2 id="report-audit-title" class="card__title">Аудит</h2>
+        <p class="card__text">
+          Журнал действий с пользователем, сущностью и деталями. Доступен только
+          администратору.
+        </p>
+        <div class="card-actions">
+          <a class="btn btn--outline btn--sm" href="/reports/export/audit">Скачать CSV</a>
+        </div>
+      </section>
+    <% } %>
+  </div>
+
+  <p class="form-field__hint report-grid__note">
+    Имя файла содержит дату выгрузки, например
+    <code>motherload-stock-<%= movementRange.dateTo %>.csv</code>. Если Excel открывает
+    файл одной колонкой, проверьте, что импорт использует разделитель «;».
+  </p>
+</section>
