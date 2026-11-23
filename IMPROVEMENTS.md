@@ -2,16 +2,6 @@
 
 Пока пусто. Некритичные находки добавляются сюда по мере работы.
 
-## 2026-11-23, Task 11 — audit cannot join the stock transaction yet
-
-A posted receipt is audited **after** its transaction commits: `insertAuditEntry`
-queries the shared pool and accepts no transaction client. Impact: if the
-process dies between COMMIT and the audit insert, a conducted receipt has no
-`stock.receipt` row (stock data stays correct; the audit trail has a hole). Owner:
-Task 11 fix round 2, after Task 5 merges, so that the audit UI work is not
-touched twice. Fix: optional client parameter on `insertAuditEntry` and the
-audit call moved inside `withTransaction`.
-
 ## 2026-11-23, Task 11 — freeze check runs before supplier/component validation
 
 `postReceipt` checks the inventory freeze before it checks that the supplier and
@@ -27,6 +17,20 @@ defines the precedence it wants to show.
 year range and let PostgreSQL reject the sequence insert. Resolved in the
 2026-11-23 fix round: `docDate` is now bounded to 2000–2999 with a Russian 400,
 together with bounds for `qty`, `componentId`, `unitCost` and line totals.
+
+## 2026-11-23, Task 5 — RBAC, users, profile, audit
+
+- `GET /login` returns 404: only `POST /login` is routed. A user who types the
+  address or follows an old bookmark sees the not-found page. Task 4 owns the
+  auth routes; a redirect to `/` would be the natural fix.
+- 400/403/404 responses still use the Task 4 bootstrap HTML without the app
+  layout. Task 6 replaces it with the shared error views; the status codes and
+  Russian messages from this task already flow through that middleware.
+- The navigation bar wraps to a second row for administrators at 1280–1439 px,
+  because ten links plus the identity block no longer fit. All links stay
+  visible instead of being clipped by the previous horizontal scroll, but the
+  header is taller on those widths. A compact admin menu can be considered once
+  the remaining sections add their own navigation entries.
 
 ## 2026-11-22, Task 4 — auth session and rate-limit notes
 

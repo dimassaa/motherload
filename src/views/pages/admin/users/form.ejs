@@ -1,0 +1,253 @@
+<%
+  const isCreate = mode === 'create';
+  const fieldError = (name) => (fieldErrors && fieldErrors[name] ? fieldErrors[name] : null);
+  const passwordError = (name) =>
+    passwordErrors && passwordErrors[name] ? passwordErrors[name] : null;
+
+  // Build one aria-describedby value that lists the hint and the error. Two
+  // separate attributes would be invalid HTML and screen readers use only one.
+  const fieldAttrs = (name, { hintId = null, errorId }) => {
+    const hasError = Boolean(fieldError(name));
+    const describedBy = [hintId, hasError ? errorId : null].filter(Boolean).join(' ');
+    return [
+      hasError ? 'aria-invalid="true"' : null,
+      describedBy ? `aria-describedby="${describedBy}"` : null,
+    ]
+      .filter(Boolean)
+      .join(' ');
+  };
+  const passwordAttrs = (name, { hintId = null, errorId }) => {
+    const hasError = Boolean(passwordError(name));
+    const describedBy = [hintId, hasError ? errorId : null].filter(Boolean).join(' ');
+    return [
+      hasError ? 'aria-invalid="true"' : null,
+      describedBy ? `aria-describedby="${describedBy}"` : null,
+    ]
+      .filter(Boolean)
+      .join(' ');
+  };
+%>
+<section aria-labelledby="user-form-title">
+  <div class="page-header">
+    <h1 id="user-form-title" class="page-header__title">
+      <%= isCreate ? 'Новый пользователь' : values.fullName %>
+    </h1>
+    <a href="/admin/users">← К списку пользователей</a>
+  </div>
+
+  <%- include('../../../partials/form-errors', { errors }) %>
+
+  <div class="card-stack">
+    <section class="card form-panel" aria-labelledby="user-data-title">
+      <h2 id="user-data-title" class="card__title">
+        <%= isCreate ? 'Данные сотрудника' : 'Основные сведения' %>
+      </h2>
+
+      <form class="form" method="post" action="<%= formAction %>" novalidate>
+        <%- csrfField() %>
+
+        <div class="form-field">
+          <label class="form-field__label" for="user-full-name">Имя и фамилия</label>
+          <input
+            class="form-field__input"
+            id="user-full-name"
+            name="fullName"
+            type="text"
+            autocomplete="name"
+            required
+            value="<%= values.fullName %>"
+            <%- fieldAttrs('fullName', { errorId: 'user-full-name-error' }) %>
+          >
+          <% if (fieldError('fullName')) { %>
+            <p class="form-field__error" id="user-full-name-error"><%= fieldError('fullName') %></p>
+          <% } %>
+        </div>
+
+        <div class="form-field">
+          <label class="form-field__label" for="user-email">Email</label>
+          <% if (isCreate) { %>
+            <input
+              class="form-field__input"
+              id="user-email"
+              name="email"
+              type="email"
+              inputmode="email"
+              autocomplete="off"
+              required
+              value="<%= values.email %>"
+              <%- fieldAttrs('email', {
+                hintId: 'user-email-hint',
+                errorId: 'user-email-error',
+              }) %>
+            >
+            <p class="form-field__hint" id="user-email-hint">
+              Только адреса в домене .by, например sklad@motherload.by.
+            </p>
+            <% if (fieldError('email')) { %>
+              <p class="form-field__error" id="user-email-error"><%= fieldError('email') %></p>
+            <% } %>
+          <% } else { %>
+            <input
+              class="form-field__input"
+              id="user-email"
+              type="email"
+              value="<%= values.email %>"
+              readonly
+              aria-describedby="user-email-hint"
+            >
+            <p class="form-field__hint" id="user-email-hint">
+              Email — это логин. Изменить его нельзя.
+            </p>
+          <% } %>
+        </div>
+
+        <div class="form-field">
+          <label class="form-field__label" for="user-role">Роль</label>
+          <select
+            class="form-field__select"
+            id="user-role"
+            name="role"
+            <%- fieldAttrs('role', { errorId: 'user-role-error' }) %>
+          >
+            <option value="storekeeper" <%- values.role === 'storekeeper' ? 'selected' : '' %>>
+              Кладовщик
+            </option>
+            <option value="analyst" <%- values.role === 'analyst' ? 'selected' : '' %>>
+              Аналитик
+            </option>
+            <option value="admin" <%- values.role === 'admin' ? 'selected' : '' %>>
+              Администратор
+            </option>
+          </select>
+          <% if (fieldError('role')) { %>
+            <p class="form-field__error" id="user-role-error"><%= fieldError('role') %></p>
+          <% } %>
+        </div>
+
+        <div class="form-field">
+          <label class="form-field__label" for="user-phone">Телефон</label>
+          <input
+            class="form-field__input"
+            id="user-phone"
+            name="phone"
+            type="tel"
+            inputmode="tel"
+            autocomplete="tel"
+            placeholder="+375 (29) 123-45-67"
+            value="<%= values.phone %>"
+            <%- fieldAttrs('phone', {
+              hintId: 'user-phone-hint',
+              errorId: 'user-phone-error',
+            }) %>
+          >
+          <p class="form-field__hint" id="user-phone-hint">
+            Необязательно. Формат: +375 (29) 123-45-67.
+          </p>
+          <% if (fieldError('phone')) { %>
+            <p class="form-field__error" id="user-phone-error"><%= fieldError('phone') %></p>
+          <% } %>
+        </div>
+
+        <% if (isCreate) { %>
+          <div class="form-field">
+            <label class="form-field__label" for="user-password">Пароль</label>
+            <input
+              class="form-field__input"
+              id="user-password"
+              name="password"
+              type="password"
+              autocomplete="new-password"
+              required
+              <%- fieldAttrs('password', {
+                hintId: 'user-password-hint',
+                errorId: 'user-password-error',
+              }) %>
+            >
+            <p class="form-field__hint" id="user-password-hint">
+              Не короче 10 символов, строчная и заглавная буквы, цифра. Пароль не показывается и не
+              записывается в журнал.
+            </p>
+            <% if (fieldError('password')) { %>
+              <p class="form-field__error" id="user-password-error"><%= fieldError('password') %></p>
+            <% } %>
+          </div>
+        <% } %>
+
+        <div class="form-actions">
+          <button class="btn btn--primary" type="submit">
+            <%= isCreate ? 'Создать пользователя' : 'Сохранить изменения' %>
+          </button>
+          <a class="btn btn--ghost" href="/admin/users">Отмена</a>
+        </div>
+      </form>
+    </section>
+
+    <% if (!isCreate) { %>
+      <section class="card form-panel" aria-labelledby="user-access-title">
+        <h2 id="user-access-title" class="card__title">Доступ</h2>
+        <p class="card__text">
+          <% if (user.isActive) { %>
+            Учётная запись активна: сотрудник может входить в систему.
+          <% } else { %>
+            Учётная запись закрыта: вход в систему запрещён.
+          <% } %>
+        </p>
+
+        <div class="form-actions">
+          <% if (isSelf) { %>
+            <button class="btn btn--outline" type="button" disabled>Закрыть доступ</button>
+            <p class="form-field__hint">Нельзя деактивировать собственную учётную запись.</p>
+          <% } else { %>
+            <form method="post" action="/admin/users/<%= user.id %>/toggle">
+              <%- csrfField() %>
+              <button class="btn btn--outline" type="submit">
+                <%= user.isActive ? 'Закрыть доступ' : 'Восстановить доступ' %>
+              </button>
+            </form>
+          <% } %>
+        </div>
+      </section>
+
+      <section class="card form-panel" aria-labelledby="user-password-title">
+        <h2 id="user-password-title" class="card__title">Сброс пароля</h2>
+        <p class="card__text">
+          После сброса все сеансы сотрудника завершатся, и ему придётся войти заново.
+        </p>
+
+        <%- include('../../../partials/form-errors', { errors: passwordMessages }) %>
+
+        <form class="form" method="post" action="/admin/users/<%= user.id %>/password" novalidate>
+          <%- csrfField() %>
+
+          <div class="form-field">
+            <label class="form-field__label" for="user-new-password">Новый пароль</label>
+            <input
+              class="form-field__input"
+              id="user-new-password"
+              name="password"
+              type="password"
+              autocomplete="new-password"
+              required
+              <%- passwordAttrs('password', {
+                hintId: 'user-new-password-hint',
+                errorId: 'user-new-password-error',
+              }) %>
+            >
+            <p class="form-field__hint" id="user-new-password-hint">
+              Не короче 10 символов, строчная и заглавная буквы, цифра.
+            </p>
+            <% if (passwordError('password')) { %>
+              <p class="form-field__error" id="user-new-password-error">
+                <%= passwordError('password') %>
+              </p>
+            <% } %>
+          </div>
+
+          <div class="form-actions">
+            <button class="btn btn--outline" type="submit">Сбросить пароль</button>
+          </div>
+        </form>
+      </section>
+    <% } %>
+  </div>
+</section>

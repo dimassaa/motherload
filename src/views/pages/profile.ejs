@@ -1,0 +1,189 @@
+<%
+  const fieldError = (name) => (fieldErrors && fieldErrors[name] ? fieldErrors[name] : null);
+  const passwordError = (name) =>
+    passwordErrors && passwordErrors[name] ? passwordErrors[name] : null;
+
+  // One aria-describedby listing both hint and error; two attributes would be
+  // invalid HTML and assistive technology would read only one of them.
+  const fieldAttrs = (name, { hintId = null, errorId }) => {
+    const hasError = Boolean(fieldError(name));
+    const describedBy = [hintId, hasError ? errorId : null].filter(Boolean).join(' ');
+    return [
+      hasError ? 'aria-invalid="true"' : null,
+      describedBy ? `aria-describedby="${describedBy}"` : null,
+    ]
+      .filter(Boolean)
+      .join(' ');
+  };
+  const passwordAttrs = (name, { hintId = null, errorId }) => {
+    const hasError = Boolean(passwordError(name));
+    const describedBy = [hintId, hasError ? errorId : null].filter(Boolean).join(' ');
+    return [
+      hasError ? 'aria-invalid="true"' : null,
+      describedBy ? `aria-describedby="${describedBy}"` : null,
+    ]
+      .filter(Boolean)
+      .join(' ');
+  };
+%>
+<section aria-labelledby="profile-title">
+  <div class="page-header">
+    <h1 id="profile-title" class="page-header__title">Профиль</h1>
+    <p class="page-header__meta"><%= roleLabel(currentUser.role) %></p>
+  </div>
+
+  <div class="card-stack">
+    <section class="card form-panel" aria-labelledby="profile-data-title">
+      <h2 id="profile-data-title" class="card__title">Личные данные</h2>
+
+      <%- include('../partials/form-errors', { errors }) %>
+
+      <form class="form" method="post" action="/profile" novalidate>
+        <%- csrfField() %>
+
+        <div class="form-field">
+          <label class="form-field__label" for="profile-email">Email</label>
+          <input
+            class="form-field__input"
+            id="profile-email"
+            type="email"
+            value="<%= currentUser.email %>"
+            readonly
+            aria-describedby="profile-email-hint"
+          >
+          <p class="form-field__hint" id="profile-email-hint">
+            Email — это логин. Изменить его может только администратор.
+          </p>
+        </div>
+
+        <div class="form-field">
+          <label class="form-field__label" for="profile-full-name">Имя и фамилия</label>
+          <input
+            class="form-field__input"
+            id="profile-full-name"
+            name="fullName"
+            type="text"
+            autocomplete="name"
+            required
+            value="<%= values.fullName %>"
+            <%- fieldAttrs('fullName', { errorId: 'profile-full-name-error' }) %>
+          >
+          <% if (fieldError('fullName')) { %>
+            <p class="form-field__error" id="profile-full-name-error">
+              <%= fieldError('fullName') %>
+            </p>
+          <% } %>
+        </div>
+
+        <div class="form-field">
+          <label class="form-field__label" for="profile-phone">Телефон</label>
+          <input
+            class="form-field__input"
+            id="profile-phone"
+            name="phone"
+            type="tel"
+            inputmode="tel"
+            autocomplete="tel"
+            placeholder="+375 (29) 123-45-67"
+            value="<%= values.phone %>"
+            <%- fieldAttrs('phone', {
+              hintId: 'profile-phone-hint',
+              errorId: 'profile-phone-error',
+            }) %>
+          >
+          <p class="form-field__hint" id="profile-phone-hint">
+            Необязательно. Формат: +375 (29) 123-45-67.
+          </p>
+          <% if (fieldError('phone')) { %>
+            <p class="form-field__error" id="profile-phone-error"><%= fieldError('phone') %></p>
+          <% } %>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn btn--primary" type="submit">Сохранить профиль</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card form-panel" aria-labelledby="profile-password-title">
+      <h2 id="profile-password-title" class="card__title">Смена пароля</h2>
+      <p class="card__text">
+        После смены пароля остальные сеансы завершатся. Текущая вкладка останется открытой.
+      </p>
+
+      <%- include('../partials/form-errors', { errors: passwordMessages }) %>
+
+      <form class="form" method="post" action="/profile/password" novalidate>
+        <%- csrfField() %>
+
+        <div class="form-field">
+          <label class="form-field__label" for="profile-current-password">Текущий пароль</label>
+          <input
+            class="form-field__input"
+            id="profile-current-password"
+            name="currentPassword"
+            type="password"
+            autocomplete="current-password"
+            required
+            <%- passwordAttrs('currentPassword', {
+              errorId: 'profile-current-password-error',
+            }) %>
+          >
+          <% if (passwordError('currentPassword')) { %>
+            <p class="form-field__error" id="profile-current-password-error">
+              <%= passwordError('currentPassword') %>
+            </p>
+          <% } %>
+        </div>
+
+        <div class="form-field">
+          <label class="form-field__label" for="profile-new-password">Новый пароль</label>
+          <input
+            class="form-field__input"
+            id="profile-new-password"
+            name="newPassword"
+            type="password"
+            autocomplete="new-password"
+            required
+            <%- passwordAttrs('newPassword', {
+              hintId: 'profile-new-password-hint',
+              errorId: 'profile-new-password-error',
+            }) %>
+          >
+          <p class="form-field__hint" id="profile-new-password-hint">
+            Не короче 10 символов, строчная и заглавная буквы, цифра.
+          </p>
+          <% if (passwordError('newPassword')) { %>
+            <p class="form-field__error" id="profile-new-password-error">
+              <%= passwordError('newPassword') %>
+            </p>
+          <% } %>
+        </div>
+
+        <div class="form-field">
+          <label class="form-field__label" for="profile-repeat-password">Повторите новый пароль</label>
+          <input
+            class="form-field__input"
+            id="profile-repeat-password"
+            name="repeatPassword"
+            type="password"
+            autocomplete="new-password"
+            required
+            <%- passwordAttrs('repeatPassword', {
+              errorId: 'profile-repeat-password-error',
+            }) %>
+          >
+          <% if (passwordError('repeatPassword')) { %>
+            <p class="form-field__error" id="profile-repeat-password-error">
+              <%= passwordError('repeatPassword') %>
+            </p>
+          <% } %>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn btn--outline" type="submit">Сменить пароль</button>
+        </div>
+      </form>
+    </section>
+  </div>
+</section>

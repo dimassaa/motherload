@@ -1,0 +1,149 @@
+<section aria-labelledby="audit-title">
+  <div class="page-header">
+    <h1 id="audit-title" class="page-header__title">Аудит</h1>
+    <p class="page-header__meta">Записей: <%= total %></p>
+  </div>
+
+  <form
+    class="filter-bar"
+    method="get"
+    action="/admin/audit"
+    role="search"
+    aria-label="Фильтры журнала аудита"
+  >
+    <div class="form-field">
+      <label class="form-field__label" for="audit-user">Пользователь</label>
+      <select class="form-field__select" id="audit-user" name="userId">
+        <option value="">Все пользователи</option>
+        <% for (const user of options.users) { %>
+          <option
+            value="<%= user.id %>"
+            <%- String(filters.userId ?? '') === String(user.id) ? 'selected' : '' %>
+          >
+            <%= user.fullName %> (<%= user.email %>)
+          </option>
+        <% } %>
+      </select>
+    </div>
+
+    <div class="form-field">
+      <label class="form-field__label" for="audit-action">Действие</label>
+      <select class="form-field__select" id="audit-action" name="action">
+        <option value="">Все действия</option>
+        <% for (const action of options.actions) { %>
+          <option value="<%= action %>" <%- filters.action === action ? 'selected' : '' %>>
+            <%= action %>
+          </option>
+        <% } %>
+      </select>
+    </div>
+
+    <div class="form-field">
+      <label class="form-field__label" for="audit-entity">Сущность</label>
+      <select class="form-field__select" id="audit-entity" name="entityType">
+        <option value="">Все сущности</option>
+        <% for (const entityType of options.entityTypes) { %>
+          <option
+            value="<%= entityType %>"
+            <%- filters.entityType === entityType ? 'selected' : '' %>
+          >
+            <%= entityType %>
+          </option>
+        <% } %>
+      </select>
+    </div>
+
+    <div class="form-field">
+      <label class="form-field__label" for="audit-from">С даты</label>
+      <input
+        class="form-field__input"
+        id="audit-from"
+        name="from"
+        type="date"
+        value="<%= filters.from ?? '' %>"
+      >
+    </div>
+
+    <div class="form-field">
+      <label class="form-field__label" for="audit-to">По дату</label>
+      <input
+        class="form-field__input"
+        id="audit-to"
+        name="to"
+        type="date"
+        value="<%= filters.to ?? '' %>"
+      >
+    </div>
+
+    <div class="filter-bar__actions">
+      <button class="btn btn--outline btn--sm" type="submit">Показать</button>
+      <a class="btn btn--ghost btn--sm" href="/admin/audit">Сбросить</a>
+    </div>
+  </form>
+
+  <% if (entries.length === 0) { %>
+    <%- include('../../partials/empty-state', {
+      title: 'Записей пока нет',
+      text: 'Журнал заполняется, когда сотрудники входят в систему и меняют данные. Измените фильтры, если ищете более старые записи.',
+    }) %>
+  <% } else { %>
+    <div class="table-wrap">
+      <table class="table">
+        <thead class="table__head">
+          <tr>
+            <th class="table__heading" scope="col">Дата и время</th>
+            <th class="table__heading" scope="col">Пользователь</th>
+            <th class="table__heading" scope="col">Действие</th>
+            <th class="table__heading" scope="col">Сущность</th>
+            <th class="table__heading" scope="col">IP</th>
+            <th class="table__heading" scope="col">Детали</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% for (const entry of entries) { %>
+            <tr class="table__row">
+              <td class="table__cell table__cell--code"><%= formatDateTime(entry.createdAt) %></td>
+              <td class="table__cell">
+                <% if (entry.userName) { %>
+                  <%= entry.userName %>
+                  <br>
+                  <span class="table__cell--muted"><%= entry.userEmail %></span>
+                <% } else { %>
+                  <span class="table__cell--muted">Система</span>
+                <% } %>
+              </td>
+              <td class="table__cell table__cell--code"><%= entry.action %></td>
+              <td class="table__cell table__cell--code">
+                <% if (entry.entityType) { %>
+                  <%= entry.entityType %><% if (entry.entityId) { %> #<%= entry.entityId %><% } %>
+                <% } else { %>
+                  —
+                <% } %>
+              </td>
+              <td class="table__cell table__cell--code"><%= entry.ip ?? '—' %></td>
+              <td class="table__cell">
+                <details class="details-json">
+                  <summary>Показать JSON</summary>
+                  <pre><%= entry.detailsJson %></pre>
+                </details>
+              </td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+
+    <%- include('../../partials/pagination', {
+      page,
+      totalPages,
+      basePath: '/admin/audit',
+      params: {
+        userId: filters.userId,
+        action: filters.action,
+        entityType: filters.entityType,
+        from: filters.from,
+        to: filters.to,
+      },
+    }) %>
+  <% } %>
+</section>

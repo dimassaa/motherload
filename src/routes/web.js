@@ -1,6 +1,8 @@
 import { Router } from 'express';
+import * as adminController from '../controllers/admin.js';
 import * as authController from '../controllers/auth.js';
-import { requireAuth } from '../middleware/auth.js';
+import * as profileController from '../controllers/profile.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 import { csrfProtection } from '../middleware/csrf.js';
 import { isDatabaseUp } from '../repositories/health.js';
 
@@ -29,6 +31,23 @@ export function createWebRouter({ loginLimiter }) {
   router.post('/login', loginLimiter, authController.login);
   router.post('/logout', authController.logout);
   router.get('/dashboard', requireAuth, authController.showDashboard);
+
+  router.get('/profile', requireAuth, profileController.showProfile);
+  router.post('/profile', requireAuth, profileController.updateProfile);
+  router.post('/profile/password', requireAuth, profileController.changePassword);
+
+  // `/admin/users/new` is registered before `/:id` so the literal segment is not
+  // swallowed by the id parameter. The form posts to the collection endpoint;
+  // the `/new` POST alias keeps the URL the brief lists working as well.
+  router.get('/admin/users', requireRole('admin'), adminController.showUsers);
+  router.get('/admin/users/new', requireRole('admin'), adminController.showNewUser);
+  router.post('/admin/users', requireRole('admin'), adminController.createUser);
+  router.post('/admin/users/new', requireRole('admin'), adminController.createUser);
+  router.get('/admin/users/:id', requireRole('admin'), adminController.showEditUser);
+  router.post('/admin/users/:id', requireRole('admin'), adminController.updateUser);
+  router.post('/admin/users/:id/password', requireRole('admin'), adminController.resetPassword);
+  router.post('/admin/users/:id/toggle', requireRole('admin'), adminController.toggleUser);
+  router.get('/admin/audit', requireRole('admin'), adminController.showAudit);
 
   return router;
 }

@@ -84,6 +84,20 @@ test('app layout renders role-aware links and logout inside the no-JS burger', a
   assert.doesNotMatch(html, /Администрирование/);
 });
 
+test('authenticated header links the identity and the burger account to the profile', async () => {
+  const html = await renderAppLayout();
+
+  assert.match(html, /<a class="app-header__identity" href="\/profile">/);
+  assert.doesNotMatch(html, /<p class="app-header__identity"/);
+
+  const burgerStart = html.indexOf('app-nav__burger-panel');
+  assert.ok(burgerStart > -1, 'the burger panel must render');
+  assert.match(
+    html.slice(burgerStart),
+    /<a class="btn btn--ghost btn--sm" href="\/profile">Профиль<\/a>/,
+  );
+});
+
 test('mobile breakpoint hides the desktop nav and shows the burger', async () => {
   const css = await readFile(new URL('../../public/css/app.css', import.meta.url), 'utf8');
   const mobileBlock = extractCssBlock(css, '@media (max-width: 1023px)');
