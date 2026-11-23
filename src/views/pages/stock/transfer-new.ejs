@@ -2,6 +2,10 @@
   const fieldError = (name) => (fieldErrors && fieldErrors[name] ? fieldErrors[name] : null);
   const describedBy = (name, errorId) =>
     fieldError(name) ? `aria-invalid="true" aria-describedby="${errorId}"` : '';
+  // The destination field has two possible explanations: the server-side field
+  // error and the client-side same-warehouse guard. Both ids travel in one
+  // aria-describedby; the module restores this base value when the guard clears.
+  const toDescribedBy = `transfer-same-error${fieldError('toWarehouseId') ? ' transfer-to-error' : ''}`;
 %>
 <section class="stock-form-page" aria-labelledby="transfer-new-title">
   <div class="page-header">
@@ -71,7 +75,9 @@
           name="toWarehouseId"
           required
           data-to-warehouse
-          <%- describedBy('toWarehouseId', 'transfer-to-error') %>
+          data-base-describedby="<%= toDescribedBy %>"
+          aria-describedby="<%= toDescribedBy %>"
+          <%- fieldError('toWarehouseId') ? 'aria-invalid="true"' : '' %>
         >
           <option value="">Выберите склад-назначение</option>
           <% for (const warehouse of warehouses) { %>

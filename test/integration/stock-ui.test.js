@@ -98,6 +98,147 @@ test('stock ui: receipt form is available to storekeeper and forbidden to analys
   }
 });
 
+test('stock ui: /stock redirects and the navigation never advertises a missing page', async () => {
+  const ctx = await seedStock();
+
+  const storekeeper = await ctx.signIn('storekeeper');
+  const redirect = await storekeeper.agent.get('/stock');
+  assert.equal(redirect.status, 302);
+  assert.equal(redirect.headers.location, '/stock/receipts');
+
+  const storekeeperNav = await storekeeper.agent.get('/dashboard');
+  assert.equal(storekeeperNav.status, 200);
+  assert.match(storekeeperNav.text, /href="\/stock"/);
+  for (const missing of ['/analytics', '/alerts', '/reports']) {
+    assert.doesNotMatch(
+      storekeeperNav.text,
+      new RegExp(`href="${missing}"`),
+      `${missing} must stay hidden until its route exists`,
+    );
+  }
+
+  const analyst = await ctx.signIn('analyst');
+  const denied = await analyst.agent.get('/stock');
+  assert.equal(denied.status, 403);
+  assert.match(denied.text, /Недостаточно прав/);
+
+  const analystNav = await analyst.agent.get('/dashboard');
+  assert.equal(analystNav.status, 200);
+  assert.match(analystNav.text, /href="\/components"/);
+  assert.doesNotMatch(analystNav.text, /href="\/stock"/);
+  for (const missing of ['/analytics', '/alerts', '/reports']) {
+    assert.doesNotMatch(analystNav.text, new RegExp(`href="${missing}"`));
+  }
+});
+
+test('stock ui: an out-of-range document id is a 404, not a database error', async () => {
+  const ctx = await seedStock();
+  const storekeeper = await ctx.signIn('storekeeper');
+
+  const response = await storekeeper.agent.get('/stock/receipts/99999999999999999999');
+  assert.equal(response.status, 404);
+  assert.match(response.text, /Документ не найден/);
+});
+
+test('stock ui: row errors mark the inputs they belong to', async () => {
+  const ctx = await seedStock();
+  const storekeeper = await ctx.signIn('storekeeper');
+  const token = await getCsrf(storekeeper.agent, '/stock/receipts/new');
+
+  const response = await storekeeper.agent
+    .post('/stock/receipts')
+    .type('form')
+    .send({
+      supplierId: String(ctx.supplierId),
+      warehouseId: String(ctx.warehouseId),
+      docDate: '2026-11-22',
+      'lines[0][componentId]': '',
+      'lines[0][qty]': '0',
+      'lines[0][unitCost]': 'abc',
+      _csrf: token,
+    });
+
+  assert.equal(response.status, 400);
+  assert.match(response.text, /aria-describedby="stock-line-0-componentId-error"/);
+  assert.match(response.text, /aria-describedby="stock-line-0-qty-error"/);
+  assert.match(response.text, /aria-describedby="stock-line-0-unitCost-error"/);
+  assert.match(response.text, /id="stock-line-0-qty-error"[^>]*>\s*Строка 1: количество/);
+  assert.match(response.text, /id="stock-line-0-unitCost-error"[^>]*>\s*Строка 1: цена/);
+});
+
+test('stock ui: duplicate components name the offending row', async () => {
+  const ctx = await seedStock();
+  await receive(ctx, 5);
+
+  const storekeeper = await ctx.signIn('storekeeper');
+  const token = await getCsrf(storekeeper.agent, '/stock/issues/new');
+  const response = await storekeeper.agent
+    .post('/stock/issues')
+    .type('form')
+    .send({
+      warehouseId: String(ctx.warehouseId),
+      docDate: '2026-11-22',
+      reason: 'sale',
+      'lines[0][componentId]': String(ctx.componentId),
+      'lines[0][qty]': '1',
+      'lines[1][componentId]': String(ctx.componentId),
+      'lines[1][qty]': '1',
+      _csrf: token,
+    });
+
+  assert.equal(response.status, 400);
+  assert.match(response.text, /Строка 2: позиция указана несколько раз/);
+  assert.match(response.text, /aria-describedby="stock-line-1-componentId-error"/);
+  assert.equal(await countRows('stock_documents'), 1, 'only the baseline receipt exists');
+});
+
+test('stock ui: a rejected post keeps an archived option visible', async () => {
+  const ctx = await seedStock();
+  const storekeeper = await ctx.signIn('storekeeper');
+
+  await query('update components set is_active = false where id = $1', [ctx.componentId]);
+  let token = await getCsrf(storekeeper.agent, '/stock/receipts/new');
+  let response = await storekeeper.agent
+    .post('/stock/receipts')
+    .type('form')
+    .send({
+      supplierId: String(ctx.supplierId),
+      warehouseId: String(ctx.warehouseId),
+      docDate: '2026-11-22',
+      'lines[0][componentId]': String(ctx.componentId),
+      'lines[0][qty]': '1',
+      'lines[0][unitCost]': '10',
+      _csrf: token,
+    });
+
+  assert.equal(response.status, 400);
+  assert.match(response.text, /неактивна/);
+  assert.match(response.text, new RegExp(`value="${ctx.componentId}"[^>]*selected`));
+  assert.match(response.text, /\(неактивен\)/);
+
+  await query('update components set is_active = true where id = $1', [ctx.componentId]);
+  await query('update suppliers set is_active = false where id = $1', [ctx.supplierId]);
+  token = await getCsrf(storekeeper.agent, '/stock/receipts/new');
+  response = await storekeeper.agent
+    .post('/stock/receipts')
+    .type('form')
+    .send({
+      supplierId: String(ctx.supplierId),
+      warehouseId: String(ctx.warehouseId),
+      docDate: '2026-11-22',
+      'lines[0][componentId]': String(ctx.componentId),
+      'lines[0][qty]': '1',
+      'lines[0][unitCost]': '10',
+      _csrf: token,
+    });
+
+  assert.equal(response.status, 400);
+  assert.match(response.text, /Поставщик неактивен/);
+  assert.match(response.text, new RegExp(`value="${ctx.supplierId}"[^>]*selected`));
+  assert.match(response.text, /\(неактивен\)/);
+  assert.equal(await countRows('stock_documents'), 0);
+});
+
 test('stock ui: POST receipt redirects to the document card and shows the number', async () => {
   const ctx = await seedStock();
   const storekeeper = await ctx.signIn('storekeeper');
@@ -253,6 +394,11 @@ test('stock ui: transfer rejects identical warehouses and posts between two ware
   const destinationId = await secondWarehouse();
 
   const storekeeper = await ctx.signIn('storekeeper');
+  const form = await storekeeper.agent.get('/stock/transfers/new');
+  assert.equal(form.status, 200);
+  assert.match(form.text, /id="transfer-to"[\s\S]*?aria-describedby="transfer-same-error"/);
+  assert.match(form.text, /data-base-describedby="transfer-same-error"/);
+
   let token = await getCsrf(storekeeper.agent, '/stock/transfers/new');
 
   const same = await storekeeper.agent

@@ -656,18 +656,36 @@ export async function listDocumentLineViews(documentId) {
 }
 
 /**
- * Active positions for the fallback `<select>` on stock forms. The type-ahead
- * replaces this list only when JavaScript is available; without it the native
- * select keeps the form usable.
- * @returns {Promise<Array<{ id: number, sku: string, name: string, unit: string }>>}
+ * Positions for the fallback `<select>` on stock forms.
+ *
+ * Active positions always appear. Ids passed in `includeIds` are kept even when
+ * archived, so a rejected post can still show the operator the exact option the
+ * server refused instead of silently replacing it with an empty field.
+ *
+ * @param {number[]} [includeIds]
+ * @returns {Promise<Array<{
+ *   id: number,
+ *   sku: string,
+ *   name: string,
+ *   unit: string,
+ *   isActive: boolean,
+ * }>>}
  */
-export async function listActiveComponents() {
+export async function listFormComponents(includeIds = []) {
+  const ids = [...new Set(includeIds.filter((id) => Number.isSafeInteger(id) && id > 0))];
   const { rows } = await pool.query(
-    `select id, sku, name, unit
+    `select id, sku, name, unit, is_active
      from components
-     where is_active
+     where is_active or id = any($1::int[])
      order by name, id`,
+    [ids],
   );
 
-  return rows.map((row) => ({ id: row.id, sku: row.sku, name: row.name, unit: row.unit }));
+  return rows.map((row) => ({
+    id: row.id,
+    sku: row.sku,
+    name: row.name,
+    unit: row.unit,
+    isActive: row.is_active,
+  }));
 }

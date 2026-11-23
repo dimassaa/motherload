@@ -58,12 +58,9 @@ defines the precedence it wants to show.
 
 ## 2026-11-23, Task 14 — stock operation screens
 
-- The navigation still links `Остатки` to `/stock`, which has no route: clicking
-  it shows the 404 page. Task 14 owns the three document lists, not a stock
-  overview, and adding a redirect to `/stock/receipts` would hand analysts a 403
-  because the document lists are admin/storekeeper only. A role-aware stock
-  overview (balances for every role) belongs to a later stage; until then the
-  link is misleading.
+- The navigation audit found `/analytics`, `/alerts` and `/reports` had no routes
+  yet. They are hidden from `nav-links.ejs` until their tasks land; a visible
+  link must never advertise a 404.
 - Receipt rows with the same component are deliberately accepted, matching
   `postReceipt`. The form does not merge them. The Task 11 note asked for a
   decision here: changing the service contract is out of Task 14's scope, and

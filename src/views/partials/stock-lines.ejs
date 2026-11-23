@@ -3,6 +3,7 @@
   // form). The native select is the no-JavaScript path; the search box is
   // revealed by the page module and writes its choice back into the select.
   const emptyRow = { componentId: '', qty: '', unitCost: '' };
+  const rowErrors = typeof lineErrors !== 'undefined' && lineErrors ? lineErrors : {};
 %>
 <div class="stock-lines" data-stock-lines data-with-cost="<%= withCost %>">
   <noscript>
@@ -31,14 +32,26 @@
       </thead>
       <tbody data-stock-rows>
         <% for (const [index, row] of rows.entries()) { %>
-          <%- include('./stock-line-row', { index, row, components, withCost }) %>
+          <%- include('./stock-line-row', {
+            index,
+            row,
+            components,
+            withCost,
+            lineErrors: rowErrors,
+          }) %>
         <% } %>
       </tbody>
     </table>
   </div>
 
   <template data-stock-row-template>
-    <%- include('./stock-line-row', { index: '__INDEX__', row: emptyRow, components: [], withCost }) %>
+    <%- include('./stock-line-row', {
+      index: '__INDEX__',
+      row: emptyRow,
+      components: [],
+      withCost,
+      lineErrors: {},
+    }) %>
   </template>
 
   <div class="stock-lines__actions">

@@ -254,13 +254,15 @@ export function initStockLines(form) {
           element.getAttribute('for').replaceAll(/stock-line-\d+-/g, `stock-line-${index}-`),
         );
       }
-      for (const element of row.element.querySelectorAll('[aria-controls]')) {
-        element.setAttribute(
-          'aria-controls',
-          element
-            .getAttribute('aria-controls')
-            .replaceAll(/stock-line-\d+-/g, `stock-line-${index}-`),
-        );
+      for (const element of row.element.querySelectorAll('[aria-controls], [aria-describedby]')) {
+        for (const attribute of ['aria-controls', 'aria-describedby']) {
+          const value = element.getAttribute(attribute);
+          if (!value) continue;
+          element.setAttribute(
+            attribute,
+            value.replaceAll(/stock-line-\d+-/g, `stock-line-${index}-`),
+          );
+        }
       }
     });
   }

@@ -899,9 +899,20 @@ export async function getDocumentDetail(documentId, type) {
 }
 
 /**
- * Active positions for the no-JavaScript fallback select on stock forms.
- * @returns {Promise<Array<{ id: number, sku: string, name: string, unit: string }>>}
+ * Positions for the no-JavaScript fallback select on stock forms.
+ *
+ * Archived positions are included only when their ids are passed in, which is
+ * how a rejected post keeps the submitted option visible with an
+ * «(неактивен)» label.
+ * @param {number[]} [includeIds]
+ * @returns {Promise<Array<{
+ *   id: number,
+ *   sku: string,
+ *   name: string,
+ *   unit: string,
+ *   isActive: boolean,
+ * }>>}
  */
-export function listActiveComponents() {
-  return stock.listActiveComponents();
+export function listFormComponents(includeIds = []) {
+  return stock.listFormComponents(includeIds);
 }

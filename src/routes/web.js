@@ -43,9 +43,11 @@ export function createWebRouter({ loginLimiter }) {
   router.get('/components/:id', requireAuth, componentsController.showCard);
 
   // Stock operations are a storekeeper/admin workflow. Every route enforces
-  // the role on the server; the navigation only hides the links. `/new` is
-  // registered before `/:id` so the literal segment is not swallowed by the id
-  // parameter. Documents are immutable: there are no edit or delete routes.
+  // the role on the server; the navigation only hides the links. `/stock`
+  // itself is a bookmark-friendly entry point into the receipts list. `/new`
+  // is registered before `/:id` so the literal segment is not swallowed by the
+  // id parameter. Documents are immutable: there are no edit or delete routes.
+  router.get('/stock', requireRole('admin', 'storekeeper'), stockController.showStock);
   router.get('/stock/receipts', requireRole('admin', 'storekeeper'), stockController.showReceipts);
   router.get(
     '/stock/receipts/new',

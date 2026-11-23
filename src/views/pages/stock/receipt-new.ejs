@@ -42,7 +42,7 @@
               value="<%= supplier.id %>"
               <%- String(values.supplierId) === String(supplier.id) ? 'selected' : '' %>
             >
-              <%= supplier.name %>
+              <%= supplier.name %><%= supplier.isActive ? '' : ' (неактивен)' %>
             </option>
           <% } %>
         </select>

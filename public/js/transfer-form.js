@@ -28,8 +28,13 @@ if (form) {
       errorBox.hidden = !same;
     }
     if (to) {
-      if (same) to.setAttribute('aria-invalid', 'true');
-      else to.removeAttribute('aria-invalid');
+      if (same) {
+        to.setAttribute('aria-invalid', 'true');
+        to.setAttribute('aria-describedby', 'transfer-same-error');
+      } else {
+        to.removeAttribute('aria-invalid');
+        to.setAttribute('aria-describedby', to.dataset.baseDescribedby ?? 'transfer-same-error');
+      }
     }
     return same;
   }
@@ -41,8 +46,9 @@ if (form) {
   to?.addEventListener('change', checkSameWarehouse);
 
   form.addEventListener('submit', (event) => {
-    if (!checkSameWarehouse()) return;
-    event.preventDefault();
-    to?.focus();
+    if (checkSameWarehouse()) {
+      event.preventDefault();
+      to?.focus();
+    }
   });
 }

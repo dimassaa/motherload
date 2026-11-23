@@ -5,8 +5,8 @@ import { fieldErrorsFromZod, messagesFromZod } from '../middleware/validate.js';
 import * as directories from '../services/directories.js';
 import {
   getDocumentDetail,
-  listActiveComponents,
   listDocuments,
+  listFormComponents,
   postIssue,
   postReceipt,
   postTransfer,
@@ -84,10 +84,16 @@ function text(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-/** A malformed or vanished `:id` names no document, so it is a 404, not a 500. */
+/**
+ * A malformed, out-of-range or vanished `:id` names no document, so it is a
+ * 404, not a database 22003 behind a 500. The upper bound is the same as the
+ * `integer` columns and the query schema.
+ */
 function parseId(raw) {
   const id = Number(raw);
-  if (!Number.isInteger(id) || id <= 0) throw new NotFoundError('Документ не найден.');
+  if (!Number.isInteger(id) || id <= 0 || id > INTEGER_MAX) {
+    throw new NotFoundError('Документ не найден.');
+  }
   return id;
 }
 
@@ -216,13 +222,21 @@ function normalizeDecimal(value) {
  * @returns {{
  *   lines: Array<{ componentId: number, qty: number, unitCost?: string }>,
  *   errors: string[],
+ *   lineErrors: Record<number, { componentId?: string, qty?: string, unitCost?: string }>,
  * }}
  */
 function prepareRows(rows, { withCost, allowDuplicates, emptyMessage }) {
   const errors = [];
+  const lineErrors = {};
   const lines = [];
   const seen = new Set();
   let filledRows = 0;
+
+  /** Attach the message both to the summary and to the offending input. */
+  const addError = (index, field, message) => {
+    errors.push(message);
+    lineErrors[index] = { ...(lineErrors[index] ?? {}), [field]: message };
+  };
 
   for (const [index, row] of rows.entries()) {
     const hasValue = row.componentId !== '' || row.qty !== '' || row.unitCost !== '';
@@ -234,17 +248,21 @@ function prepareRows(rows, { withCost, allowDuplicates, emptyMessage }) {
     const componentId = Number(row.componentId);
     const validComponent = /^\d+$/.test(row.componentId) && Number.isSafeInteger(componentId);
     if (!validComponent || componentId < 1) {
-      errors.push(`Строка ${position}: выберите позицию.`);
+      addError(index, 'componentId', `Строка ${position}: выберите позицию.`);
     }
 
     const qty = Number(row.qty);
     const validQty = /^\d+$/.test(row.qty) && Number.isSafeInteger(qty) && qty >= 1;
     if (!validQty || qty > QTY_MAX) {
-      errors.push(`Строка ${position}: количество — целое число от 1 до 1 000 000 000.`);
+      addError(index, 'qty', `Строка ${position}: количество — целое число от 1 до 1 000 000 000.`);
     }
 
     if (!allowDuplicates && validComponent && seen.has(componentId)) {
-      errors.push('Позиция указана несколько раз — объедините строки.');
+      addError(
+        index,
+        'componentId',
+        `Строка ${position}: позиция указана несколько раз — объедините строки.`,
+      );
     }
     if (validComponent) seen.add(componentId);
 
@@ -252,9 +270,13 @@ function prepareRows(rows, { withCost, allowDuplicates, emptyMessage }) {
     if (withCost) {
       unitCost = normalizeDecimal(row.unitCost);
       if (unitCost === '') {
-        errors.push(`Строка ${position}: укажите цену за единицу.`);
+        addError(index, 'unitCost', `Строка ${position}: укажите цену за единицу.`);
       } else if (!/^\d+(\.\d+)?$/.test(unitCost)) {
-        errors.push(`Строка ${position}: цена должна быть числом, например 1250,50.`);
+        addError(
+          index,
+          'unitCost',
+          `Строка ${position}: цена должна быть числом, например 1250,50.`,
+        );
       }
     }
 
@@ -263,7 +285,7 @@ function prepareRows(rows, { withCost, allowDuplicates, emptyMessage }) {
 
   if (filledRows === 0) errors.push(emptyMessage);
 
-  return { lines, errors };
+  return { lines, errors, lineErrors };
 }
 
 // ---------------------------------------------------------------------------
@@ -277,23 +299,43 @@ function prepareRows(rows, { withCost, allowDuplicates, emptyMessage }) {
  *   status?: number,
  *   values?: Record<string, unknown>,
  *   fieldErrors?: Record<string, string>,
+ *   lineErrors?: Record<number, { componentId?: string, qty?: string, unitCost?: string }>,
  *   errors?: string[],
  *   prefillComponentId?: unknown,
  * }} [state]
  */
 async function renderNew(res, type, state = {}) {
-  const { status = 200, values = {}, fieldErrors = {}, errors = [], prefillComponentId } = state;
+  const {
+    status = 200,
+    values = {},
+    fieldErrors = {},
+    lineErrors = {},
+    errors = [],
+    prefillComponentId,
+  } = state;
   const meta = DOCUMENT_META[type];
+
+  // A rejected post may name an archived position or supplier. Loading it back
+  // keeps the operator's choice visible with an explicit label instead of
+  // silently resetting the field to its placeholder.
+  const submittedComponentIds = (Array.isArray(values.rows) ? values.rows : [])
+    .map((row) => Number(row.componentId))
+    .filter((id) => Number.isSafeInteger(id) && id > 0);
+  const submittedSupplierId = Number(values.supplierId);
 
   const [warehouses, suppliers, components] = await Promise.all([
     directories.list('warehouses'),
     directories.list('suppliers'),
-    listActiveComponents(),
+    listFormComponents(submittedComponentIds),
   ]);
 
   const requested = Number(prefillComponentId);
-  const prefilled = components.find((component) => component.id === requested) ?? null;
+  const prefilled =
+    components.find((component) => component.id === requested && component.isActive) ?? null;
   const defaultRow = { componentId: prefilled ? String(prefilled.id) : '', qty: '', unitCost: '' };
+  const visibleSuppliers = suppliers.filter(
+    (supplier) => supplier.isActive || supplier.id === submittedSupplierId,
+  );
 
   const formValues = {
     supplierId: '',
@@ -312,11 +354,12 @@ async function renderNew(res, type, state = {}) {
     type,
     meta,
     warehouses: warehouses.filter((warehouse) => warehouse.isActive),
-    suppliers: suppliers.filter((supplier) => supplier.isActive),
+    suppliers: visibleSuppliers,
     components,
     reasons: ISSUE_REASONS,
     values: formValues,
     fieldErrors,
+    lineErrors,
     errors,
   });
 }
@@ -330,10 +373,12 @@ async function renderList(req, res, type) {
   const filters = listQuerySchema.parse(req.query ?? {});
   const meta = DOCUMENT_META[type];
 
+  // Only the receipt list filters by supplier; loading the directory for
+  // issues and transfers would be a query whose result no template reads.
   const [result, warehouses, suppliers] = await Promise.all([
     listDocuments(type, filters),
     directories.list('warehouses'),
-    directories.list('suppliers'),
+    type === 'receipt' ? directories.list('suppliers') : [],
   ]);
 
   const params = {
@@ -385,6 +430,11 @@ async function renderDetail(res, type, rawId) {
 // ---------------------------------------------------------------------------
 // GET handlers
 // ---------------------------------------------------------------------------
+
+/** `GET /stock` — stable entry point for the «Остатки» navigation item. */
+export function showStock(req, res) {
+  res.redirect(302, '/stock/receipts');
+}
 
 /** `GET /stock/receipts` — receipt documents with filters and pagination. */
 export async function showReceipts(req, res, next) {
@@ -513,7 +563,13 @@ export async function createReceipt(req, res, next) {
   errors.push(...prepared.errors);
 
   if (!parsed.success || prepared.errors.length > 0) {
-    await renderNew(res, 'receipt', { status: 400, values, fieldErrors, errors });
+    await renderNew(res, 'receipt', {
+      status: 400,
+      values,
+      fieldErrors,
+      lineErrors: prepared.lineErrors,
+      errors,
+    });
     return;
   }
 
@@ -563,7 +619,13 @@ export async function createIssue(req, res, next) {
   errors.push(...prepared.errors);
 
   if (!parsed.success || prepared.errors.length > 0) {
-    await renderNew(res, 'issue', { status: 400, values, fieldErrors, errors });
+    await renderNew(res, 'issue', {
+      status: 400,
+      values,
+      fieldErrors,
+      lineErrors: prepared.lineErrors,
+      errors,
+    });
     return;
   }
 
@@ -626,7 +688,13 @@ export async function createTransfer(req, res, next) {
   }
 
   if (!parsed.success || prepared.errors.length > 0 || fieldErrors.toWarehouseId) {
-    await renderNew(res, 'transfer', { status: 400, values, fieldErrors, errors });
+    await renderNew(res, 'transfer', {
+      status: 400,
+      values,
+      fieldErrors,
+      lineErrors: prepared.lineErrors,
+      errors,
+    });
     return;
   }
 
