@@ -33,7 +33,7 @@ async function countRows(table) {
 
 async function receiptAudit() {
   const { rows } = await query(
-    "select entity_type, entity_id, details from audit_log where action = 'stock.receipt' order by id",
+    "select user_id, entity_type, entity_id, details from audit_log where action = 'stock.receipt' order by id",
   );
   return rows;
 }
@@ -94,6 +94,7 @@ test('receipt creates document, batch and positive movement', async () => {
 
   const audit = await receiptAudit();
   assert.equal(audit.length, 1);
+  assert.equal(audit[0].user_id, ctx.userId);
   assert.equal(audit[0].entity_type, 'stock_document');
   assert.equal(audit[0].entity_id, String(result.documentId));
   assert.equal(audit[0].details.number, 'ПР-2026-0001');
@@ -278,6 +279,53 @@ test('receipt writes nothing when the transaction fails after the number is rese
   // The rolled-back reservation must be handed out again to the next receipt.
   const retried = await postReceipt(ctx.receiptInput);
   assert.equal(retried.number, 'ПР-2026-0001');
+});
+
+test('receipt rolls back when its audit row cannot be written', async () => {
+  const ctx = await seedBase();
+
+  // A temporary trigger is safer than renaming the shared audit table: it fails
+  // exactly one action and leaves every other audit path untouched. The drops
+  // first also make the test re-runnable after an interrupted run.
+  await query('drop trigger if exists test_block_receipt_audit on audit_log');
+  await query(`
+    create or replace function test_block_receipt_audit() returns trigger
+    language plpgsql as $body$
+    begin
+      if new.action = 'stock.receipt' then
+        raise exception 'audit blocked by test' using errcode = 'P0001';
+      end if;
+      return new;
+    end;
+    $body$
+  `);
+
+  try {
+    await query(`
+      create trigger test_block_receipt_audit
+      before insert on audit_log
+      for each row execute function test_block_receipt_audit()
+    `);
+
+    await assert.rejects(
+      () => postReceipt(ctx.receiptInput),
+      (error) => {
+        assert.equal(error.code, 'P0001');
+        return true;
+      },
+    );
+  } finally {
+    await query('drop trigger if exists test_block_receipt_audit on audit_log');
+    await query('drop function if exists test_block_receipt_audit()');
+  }
+
+  assert.equal(await countRows('stock_documents'), 0);
+  assert.equal(await countRows('stock_document_lines'), 0);
+  assert.equal(await countRows('stock_batches'), 0);
+  assert.equal(await countRows('stock_movements'), 0);
+  assert.equal(await countRows('document_sequences'), 0);
+  assert.equal(await countRows('audit_log'), 0);
+  assert.equal(await balance(ctx.componentId, ctx.warehouseId), 0);
 });
 
 test('receipt rejects values outside the database bounds with 400', async (t) => {

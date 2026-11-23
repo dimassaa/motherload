@@ -1,7 +1,6 @@
 import { withTransaction } from '../db/pool.js';
 import { ConflictError, NotFoundError, ValidationError } from '../domain/errors.js';
 import { d, toCost } from '../domain/money.js';
-import { logger } from '../lib/logger.js';
 import * as stock from '../repositories/stock.js';
 import * as audit from './audit.js';
 
@@ -180,31 +179,6 @@ function assertComponentsUsable(lines, components) {
 }
 
 /**
- * Write the receipt audit entry after the stock transaction has committed.
- *
- * The receipt is durable by then: surfacing an audit failure as a request error
- * would tell the operator the receipt failed and invite a duplicate submission.
- * The gap is logged with the document id so it can be reconciled by hand.
- */
-async function recordReceiptAudit({ document, totalCost, userId, req }) {
-  try {
-    await audit.record({
-      userId,
-      action: 'stock.receipt',
-      entityType: 'stock_document',
-      entityId: document.documentId,
-      details: { number: document.number, total: totalCost },
-      req,
-    });
-  } catch (error) {
-    (req?.log ?? logger).error(
-      { err: error, documentId: document.documentId },
-      'stock receipt audit entry failed',
-    );
-  }
-}
-
-/**
  * Post a receipt: document, lines, batches and positive movements in one
  * transaction. There is no draft state — a document either exists fully
  * conducted or not at all.
@@ -296,9 +270,23 @@ export async function postReceipt({
       });
     }
 
+    // Audited inside the transaction: an audit insert failure must undo the
+    // receipt, and a conducted document must never exist without its audit row.
+    // `req` stays optional because seeds and scripts call this service directly.
+    await audit.record(
+      {
+        userId: author,
+        action: 'stock.receipt',
+        entityType: 'stock_document',
+        entityId: inserted.id,
+        details: { number, total: totalCost },
+        req,
+      },
+      { client },
+    );
+
     return { documentId: inserted.id, number };
   });
 
-  await recordReceiptAudit({ document, totalCost, userId: author, req });
   return document;
 }
