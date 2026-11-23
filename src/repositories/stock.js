@@ -38,6 +38,24 @@ export async function nextDocumentNumber(client, type, year) {
 }
 
 /**
+ * Look up a warehouse without locking it. Read-only callers such as the FIFO
+ * preview must not queue behind a posting transaction.
+ * @param {import('pg').PoolClient | import('pg').Pool} client
+ * @param {number} warehouseId
+ * @returns {Promise<{ id: number, code: string, name: string, isActive: boolean } | null>}
+ */
+export async function findWarehouseById(client, warehouseId) {
+  const { rows } = await client.query(
+    'select id, code, name, is_active from warehouses where id = $1',
+    [warehouseId],
+  );
+  const row = rows[0];
+  if (!row) return null;
+
+  return { id: row.id, code: row.code, name: row.name, isActive: row.is_active };
+}
+
+/**
  * Lock the warehouse row and return it.
  *
  * Every stock operation starts here: the row lock serialises postings against
@@ -254,4 +272,92 @@ export async function insertMovement(client, input) {
   );
 
   return { id: rows[0].id };
+}
+
+// One SQL body for both preview and posting: the allocation must see exactly
+// the rows the lock protects. ORDER BY matches allocateFifo's sort keys.
+const OPEN_BATCHES_SQL = `select id, unit_cost, qty_remaining, received_at
+  from stock_batches
+  where component_id = $1 and warehouse_id = $2 and qty_remaining > 0
+  order by received_at, id`;
+
+function mapBatch(row) {
+  return {
+    id: row.id,
+    unitCost: row.unit_cost,
+    qtyRemaining: row.qty_remaining,
+    // pg-types returns `date` columns as ISO strings, so FIFO ordering stays
+    // chronological without a timezone shift.
+    receivedAt: row.received_at,
+  };
+}
+
+/**
+ * List the batches a FIFO preview may consume, without locking.
+ * @param {import('pg').PoolClient | import('pg').Pool} client
+ * @param {number} componentId
+ * @param {number} warehouseId
+ * @returns {Promise<Array<{ id: number, unitCost: string, qtyRemaining: number, receivedAt: string }>>}
+ */
+export async function listOpenBatches(client, componentId, warehouseId) {
+  const { rows } = await client.query(OPEN_BATCHES_SQL, [componentId, warehouseId]);
+  return rows.map(mapBatch);
+}
+
+/**
+ * Lock the batches a posting will consume.
+ *
+ * `FOR UPDATE` is what makes two concurrent issues of the same component
+ * serialise: the second transaction waits, then allocates against the remaining
+ * quantity instead of overselling a batch it read before the first commit.
+ * @param {import('pg').PoolClient} client
+ * @param {number} componentId
+ * @param {number} warehouseId
+ * @returns {Promise<Array<{ id: number, unitCost: string, qtyRemaining: number, receivedAt: string }>>}
+ */
+export async function lockOpenBatches(client, componentId, warehouseId) {
+  const { rows } = await client.query(`${OPEN_BATCHES_SQL} for update`, [componentId, warehouseId]);
+  return rows.map(mapBatch);
+}
+
+/**
+ * @param {import('pg').PoolClient} client
+ * @param {{ lineId: number, batchId: number, qty: number, unitCost: string }} input
+ * @returns {Promise<{ id: number }>}
+ */
+export async function insertBatchConsumption(client, { lineId, batchId, qty, unitCost }) {
+  const { rows } = await client.query(
+    `insert into batch_consumptions (line_id, batch_id, qty, unit_cost)
+     values ($1, $2, $3, $4)
+     returning id`,
+    [lineId, batchId, qty, unitCost],
+  );
+
+  return { id: rows[0].id };
+}
+
+/**
+ * Take consumed units out of a batch.
+ *
+ * The `qty_remaining >= $2` guard is a last line of defence: the row is already
+ * locked and FIFO checked the quantity, so no row updated means the code has a
+ * bug. Failing loudly beats silently writing a negative balance.
+ * @param {import('pg').PoolClient} client
+ * @param {{ batchId: number, qty: number }} input
+ * @returns {Promise<number>} the new remaining quantity
+ */
+export async function decrementBatchRemaining(client, { batchId, qty }) {
+  const { rows } = await client.query(
+    `update stock_batches
+     set qty_remaining = qty_remaining - $2
+     where id = $1 and qty_remaining >= $2
+     returning qty_remaining`,
+    [batchId, qty],
+  );
+
+  if (rows.length === 0) {
+    throw new Error(`stock batch ${batchId} cannot be consumed by ${qty}: guard violated`);
+  }
+
+  return rows[0].qty_remaining;
 }
